@@ -2,12 +2,12 @@
 **
 ** XPA Source File
 **
-** File         :  lib.c
-** Module       :  root
+** File         :  router.c
+** Module       :  router
 ** Author       :  SH
-** Created      :  2026-04-18 (YYYY-MM-DD)
+** Created      :  2026-01-23 (YYYY-MM-DD)
 ** License      :  MIT
-** Description  :  XPA Root Interface
+** Description  :  XPA in-memory web router
 **
 ***************************************************************/
 
@@ -15,29 +15,46 @@
 ** MARK: INCLUDES
 ***************************************************************/
 
-#include <xpa/xpa.h>
-#include "backend/backend.h"
-#include <xpa_rust.h>
-
 #include <stdio.h>
-#include <time.h>
+#include <string.h>
+#include <stdint.h>
+
+#include "router.h"
 
 /***************************************************************
 ** MARK: CONSTANTS & MACROS
 ***************************************************************/
 
+#define TEXT_HTML "text/html"
+#define TEXT_CSS "text/css"
+#define TEXT_JAVASCRIPT "text/javascript"
+#define FONT_WOFF2 "font/woff2"
+
 /***************************************************************
 ** MARK: TYPEDEFS
 ***************************************************************/
+
+typedef struct
+{
+    const uint8_t *data;
+    const uint32_t *length;
+    const char *path;
+    const char *mime_type;
+} web_resource_t;
 
 /***************************************************************
 ** MARK: STATIC VARIABLES
 ***************************************************************/
 
-static double xpa_now_ms(void)
-{
-    return ((double)clock() * 1000.0) / (double)CLOCKS_PER_SEC;
-}
+/* HTML */
+extern const uint8_t webui_index_html[];
+extern const uint32_t webui_index_html_size;
+
+
+static web_resource_t resources[] = {
+    {webui_index_html, &webui_index_html_size, "/index.html", TEXT_HTML},
+
+};
 
 /***************************************************************
 ** MARK: STATIC FUNCTION DEFS
@@ -47,29 +64,27 @@ static double xpa_now_ms(void)
 ** MARK: PUBLIC FUNCTIONS
 ***************************************************************/
 
-bool xpa_init(void)
+bool router_resolve(const char *path, const char **data, size_t *length, const char **mime_type)
 {
-    double start_ms = xpa_now_ms();
-    printf("Initializing xpa_rust from C...\n");
-    
-    if (!xpa_backend_init() || !xpa_rust_init())
+    if (!path)
     {
         return false;
     }
 
-    printf("[xpa] xpa_init done at +%.2f ms\n", xpa_now_ms() - start_ms);
+    for (int i = 0; i < sizeof(resources)/sizeof(web_resource_t); i++)
+    {
+        if (strcmp(resources[i].path, path) == 0)
+        {
+            *data = (const char*)resources[i].data;
+            *length = *resources[i].length;
+            *mime_type = resources[i].mime_type;
+            return true;
+        }
+    }
 
-    return true;
-}
+    fprintf("NOT FOUND: %s\n", path);
 
-bool xpa_create_window(const char *title, uint32_t width, uint32_t height, xpa_window_t *window)
-{
-    return xpa_backend_create_window(title, width, height, window);
-}
-
-int xpa_run(void)
-{
-    return xpa_backend_run();
+    return false;
 }
 
 /***************************************************************

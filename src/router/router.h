@@ -2,17 +2,17 @@
 **
 ** XPA Header File
 **
-** File         :  xpa.h
-** Module       :  xpa
+** File         :  router.h
+** Module       :  router
 ** Author       :  SH
-** Created      :  2026-04-18 (YYYY-MM-DD)
+** Created      :  2026-01-23 (YYYY-MM-DD)
 ** License      :  MIT
-** Description  :  XPA Interface Definition
+** Description  :  XPA in-memory web router
 **
 ***************************************************************/
 
-#ifndef XPA_H
-#define XPA_H
+#ifndef ROUTER_H
+#define ROUTER_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -22,7 +22,7 @@ extern "C" {
 ** MARK: INCLUDES
 ***************************************************************/
 
-#include <stdint.h>
+#include <stddef.h>
 #include <stdbool.h>
 
 /***************************************************************
@@ -33,22 +33,14 @@ extern "C" {
 ** MARK: TYPEDEFS
 ***************************************************************/
 
-typedef uintptr_t xpa_window_t;
-
 /***************************************************************
 ** MARK: FUNCTION DEFS
 ***************************************************************/
 
-void xpa_app_init(void);
-
-bool xpa_init(void);
-
-bool xpa_create_window(const char *title, uint32_t width, uint32_t height, xpa_window_t *window);
-
-int xpa_run(void);
+bool router_resolve(const char *path, const char **data, size_t *length, const char **mime_type);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* XPA_H */
+#endif /* ROUTER_H */

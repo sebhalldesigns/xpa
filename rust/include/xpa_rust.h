@@ -33,9 +33,7 @@ extern "C" {
 ** MARK: TYPEDEFS
 ***************************************************************/
 
-typedef struct XpaGpuContext XpaGpuContext;
-typedef struct XpaScene XpaScene;
-typedef struct XpaGpuSurface XpaGpuSurface;
+typedef struct XpaRenderer XpaRenderer;
 
 /***************************************************************
 ** MARK: FUNCTION DEFS
@@ -43,21 +41,11 @@ typedef struct XpaGpuSurface XpaGpuSurface;
 
 bool xpa_rust_init(void);
 
-// GPU context - one per application, holds device + queue
-XpaGpuContext* xpa_gpu_context_create(void);
-XpaGpuContext* xpa_gpu_context_create_with_surface(void* native_handle, uint32_t width, uint32_t height, XpaGpuSurface** out_surface);
-void xpa_gpu_context_destroy(XpaGpuContext* ctx);
-
-// Surface - one per window/panel that needs GPU rendering
-XpaGpuSurface* xpa_gpu_surface_create(XpaGpuContext* ctx, void* native_handle, uint32_t width, uint32_t height);
-void xpa_gpu_surface_destroy(XpaGpuSurface* surface);
-void xpa_gpu_surface_resize(XpaGpuContext* ctx, XpaGpuSurface* surface, uint32_t width, uint32_t height);
-
-// Scene building + rendering
-XpaScene* xpa_scene_create(void);
-void xpa_scene_destroy(XpaScene* scene);
-void xpa_scene_clear(XpaScene* scene);
-void xpa_gpu_render(XpaGpuContext* ctx, XpaGpuSurface* surface, XpaScene* scene);
+// Simple per-window renderer lifecycle
+XpaRenderer* xpa_renderer_init(void* native_handle, uint32_t width, uint32_t height);
+void xpa_renderer_resize(XpaRenderer* renderer, uint32_t width, uint32_t height);
+void xpa_renderer_render(XpaRenderer* renderer);
+void xpa_renderer_destroy(XpaRenderer* renderer);
 
 #ifdef __cplusplus
 }

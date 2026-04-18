@@ -43,8 +43,8 @@ bool xpa_backend_create_window(const char *title, uint32_t width, uint32_t heigh
 
 int xpa_backend_run(void);
 
-XpaGpuContext* xpa_get_gpu_context(void);
-bool xpa_create_surface_for_window(void* native_handle, uint32_t width, uint32_t height, XpaGpuSurface** out_surface);
+void xpa_backend_webview_load_url(char *url);
+
 
 #ifdef __cplusplus
 }
