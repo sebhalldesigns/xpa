@@ -1,13 +1,10 @@
 // lib.rs
 
-use std::path::PathBuf;
-use std::ptr::NonNull;
 use std::num::NonZeroIsize;
+use std::ptr::NonNull;
 use std::time::Instant;
-use wgpu;
-use vello::{self, AaConfig, AaSupport, RenderParams, RendererOptions, Scene};
-use vello::peniko::Color;
 use pollster;
+use wgpu;
 
 // ─── GPU Context (one per app) ───
 
@@ -16,7 +13,6 @@ pub struct XpaGpuContext {
     adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    renderer: vello::Renderer,
 }
 
 // ─── GPU Surface (one per window/panel) ───
@@ -24,63 +20,43 @@ pub struct XpaGpuContext {
 pub struct XpaGpuSurface {
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
-    target_texture: Option<wgpu::Texture>,
-    blitter: wgpu::util::TextureBlitter,
 }
 
 // ─── Scene ───
 
 pub struct XpaScene {
-    inner: Scene,
+    _private: (),
 }
 
-fn pipeline_cache_dir() -> Option<PathBuf> {
-    let base = std::env::var("LOCALAPPDATA").ok()?;
-    let dir = PathBuf::from(base).join("xpa");
-    std::fs::create_dir_all(&dir).ok()?;
-    Some(dir)
-}
+fn instance_backends() -> wgpu::Backends {
+    #[cfg(target_os = "windows")]
+    {
+        return wgpu::Backends::PRIMARY;
+    }
 
-fn load_pipeline_cache(device: &wgpu::Device, info: &wgpu::AdapterInfo) -> wgpu::PipelineCache {
-    let cached_data = wgpu::util::pipeline_cache_key(info)
-        .and_then(|key| pipeline_cache_dir().map(|d| d.join(key)))
-        .and_then(|path| std::fs::read(path).ok());
-
-    unsafe {
-        device.create_pipeline_cache(&wgpu::PipelineCacheDescriptor {
-            label: Some("xpa"),
-            data: cached_data.as_deref(),
-            fallback: true,
-        })
+    #[cfg(not(target_os = "windows"))]
+    {
+        return wgpu::Backends::VULKAN;
     }
 }
 
-fn save_pipeline_cache(cache: &wgpu::PipelineCache, info: &wgpu::AdapterInfo) {
-    let Some(data) = cache.get_data() else { return };
-    let Some(key) = wgpu::util::pipeline_cache_key(info) else { return };
-    let Some(dir) = pipeline_cache_dir() else { return };
-
-    let tmp = dir.join(format!("{}.tmp", key));
-    let final_path = dir.join(key);
-    if std::fs::write(&tmp, &data).is_ok() {
-        let _ = std::fs::rename(&tmp, &final_path);
+fn create_device_descriptor() -> wgpu::DeviceDescriptor<'static> {
+    wgpu::DeviceDescriptor {
+        label: Some("xpa device"),
+        required_features: wgpu::Features::empty(),
+        required_limits: wgpu::Limits::default(),
+        memory_hints: wgpu::MemoryHints::default(),
+        experimental_features: wgpu::ExperimentalFeatures::disabled(),
+        trace: wgpu::Trace::default(),
     }
 }
 
-fn create_renderer(device: &wgpu::Device, pipeline_cache: Option<wgpu::PipelineCache>) -> Result<vello::Renderer, vello::Error> {
-    vello::Renderer::new(
-        device,
-        RendererOptions {
-            use_cpu: false,
-            antialiasing_support: AaSupport {
-                area: false,
-                msaa8: true,
-                msaa16: false,
-            },
-            num_init_threads: None,
-            pipeline_cache,
-        },
-    )
+fn choose_present_mode(caps: &wgpu::SurfaceCapabilities) -> wgpu::PresentMode {
+    if caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
+        wgpu::PresentMode::Mailbox
+    } else {
+        wgpu::PresentMode::Fifo
+    }
 }
 
 // ─── Init ───
@@ -96,7 +72,7 @@ pub extern "C" fn xpa_rust_init() -> bool {
 #[unsafe(no_mangle)]
 pub extern "C" fn xpa_gpu_context_create() -> *mut XpaGpuContext {
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::VULKAN,
+        backends: instance_backends(),
         ..Default::default()
     });
 
@@ -112,9 +88,8 @@ pub extern "C" fn xpa_gpu_context_create() -> *mut XpaGpuContext {
         }
     };
 
-    let (device, queue) = match pollster::block_on(adapter.request_device(
-        &wgpu::DeviceDescriptor::default(),
-    )) {
+    let device_desc = create_device_descriptor();
+    let (device, queue) = match pollster::block_on(adapter.request_device(&device_desc)) {
         Ok(dq) => dq,
         Err(e) => {
             eprintln!("xpa: failed to create device: {e}");
@@ -122,26 +97,11 @@ pub extern "C" fn xpa_gpu_context_create() -> *mut XpaGpuContext {
         }
     };
 
-    let info = adapter.get_info();
-    let pipeline_cache = load_pipeline_cache(&device, &info);
-    let cache_ref = pipeline_cache.clone();
-
-    let renderer = match create_renderer(&device, Some(pipeline_cache)) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("xpa: failed to create vello renderer: {e}");
-            return std::ptr::null_mut();
-        }
-    };
-
-    std::thread::spawn(move || save_pipeline_cache(&cache_ref, &info));
-
     Box::into_raw(Box::new(XpaGpuContext {
         instance,
         adapter,
         device,
         queue,
-        renderer,
     }))
 }
 
@@ -154,7 +114,7 @@ pub unsafe extern "C" fn xpa_gpu_context_create_with_surface(
 ) -> *mut XpaGpuContext {
     let startup = Instant::now();
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::VULKAN,
+        backends: instance_backends(),
         ..Default::default()
     });
     eprintln!("[xpa_rust] instance created at +{:.2} ms", startup.elapsed().as_secs_f64() * 1000.0);
@@ -184,9 +144,8 @@ pub unsafe extern "C" fn xpa_gpu_context_create_with_surface(
     eprintln!("[xpa_rust] request_adapter took {:.2} ms", step.elapsed().as_secs_f64() * 1000.0);
 
     let step = Instant::now();
-    let (device, queue) = match pollster::block_on(adapter.request_device(
-        &wgpu::DeviceDescriptor::default(),
-    )) {
+    let device_desc = create_device_descriptor();
+    let (device, queue) = match pollster::block_on(adapter.request_device(&device_desc)) {
         Ok(dq) => dq,
         Err(e) => {
             eprintln!("xpa: failed to create device: {e}");
@@ -196,35 +155,15 @@ pub unsafe extern "C" fn xpa_gpu_context_create_with_surface(
     eprintln!("[xpa_rust] request_device took {:.2} ms", step.elapsed().as_secs_f64() * 1000.0);
 
     let step = Instant::now();
-    let info = adapter.get_info();
-    let pipeline_cache = load_pipeline_cache(&device, &info);
-    let cache_ref = pipeline_cache.clone();
-    eprintln!("[xpa_rust] pipeline cache load took {:.2} ms", step.elapsed().as_secs_f64() * 1000.0);
-
-    let step = Instant::now();
-    let renderer = match create_renderer(&device, Some(pipeline_cache)) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("xpa: failed to create vello renderer: {e}");
-            return std::ptr::null_mut();
-        }
-    };
-    eprintln!("[xpa_rust] Renderer::new took {:.2} ms", step.elapsed().as_secs_f64() * 1000.0);
-
-    std::thread::spawn(move || {
-        save_pipeline_cache(&cache_ref, &info);
-        eprintln!("[xpa_rust] pipeline cache saved to disk");
-    });
-
-    let step = Instant::now();
     let caps = surface.get_capabilities(&adapter);
     let format = caps.formats.first().copied().unwrap_or(wgpu::TextureFormat::Bgra8UnormSrgb);
+
     let config = wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         format,
         width,
         height,
-        present_mode: wgpu::PresentMode::Fifo,
+        present_mode: choose_present_mode(&caps),
         alpha_mode: caps.alpha_modes.first().copied().unwrap_or(wgpu::CompositeAlphaMode::Auto),
         view_formats: vec![],
         desired_maximum_frame_latency: 2,
@@ -233,15 +172,11 @@ pub unsafe extern "C" fn xpa_gpu_context_create_with_surface(
     eprintln!("[xpa_rust] surface.configure took {:.2} ms", step.elapsed().as_secs_f64() * 1000.0);
 
     let step = Instant::now();
-    let target_texture = create_target_texture(&device, width, height);
-    let blitter = wgpu::util::TextureBlitter::new(&device, format);
     let surface = Box::into_raw(Box::new(XpaGpuSurface {
         surface,
         config,
-        target_texture: Some(target_texture),
-        blitter,
     }));
-    eprintln!("[xpa_rust] target texture + blitter took {:.2} ms", step.elapsed().as_secs_f64() * 1000.0);
+    eprintln!("[xpa_rust] surface state setup took {:.2} ms", step.elapsed().as_secs_f64() * 1000.0);
 
     if !out_surface.is_null() {
         unsafe {
@@ -256,7 +191,6 @@ pub unsafe extern "C" fn xpa_gpu_context_create_with_surface(
         adapter,
         device,
         queue,
-        renderer,
     }))
 }
 
@@ -275,9 +209,18 @@ pub unsafe extern "C" fn xpa_gpu_context_destroy(ctx: *mut XpaGpuContext) {
 fn create_surface(instance: &wgpu::Instance, native_handle: *mut std::ffi::c_void) -> Option<wgpu::Surface<'static>> {
     use raw_window_handle::{RawWindowHandle, RawDisplayHandle, Win32WindowHandle, WindowsDisplayHandle};
 
+    unsafe extern "system" {
+        fn GetWindowLongPtrW(h_wnd: *mut std::ffi::c_void, n_index: i32) -> isize;
+    }
+
+    const GWLP_HINSTANCE: i32 = -6;
+
     let hwnd = NonNull::new(native_handle)?;
     let hwnd = NonZeroIsize::new(hwnd.as_ptr() as isize)?;
-    let raw_window = RawWindowHandle::Win32(Win32WindowHandle::new(hwnd));
+    let mut window_handle = Win32WindowHandle::new(hwnd);
+    window_handle.hinstance = NonZeroIsize::new(unsafe { GetWindowLongPtrW(native_handle, GWLP_HINSTANCE) });
+
+    let raw_window = RawWindowHandle::Win32(window_handle);
     let raw_display = RawDisplayHandle::Windows(WindowsDisplayHandle::new());
 
     let target = wgpu::SurfaceTargetUnsafe::RawHandle {
@@ -285,7 +228,13 @@ fn create_surface(instance: &wgpu::Instance, native_handle: *mut std::ffi::c_voi
         raw_display_handle: raw_display,
     };
 
-    unsafe { instance.create_surface_unsafe(target).ok() }
+    match unsafe { instance.create_surface_unsafe(target) } {
+        Ok(surface) => Some(surface),
+        Err(err) => {
+            eprintln!("xpa: create_surface_unsafe failed on Win32: {err}");
+            None
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -322,20 +271,6 @@ fn create_surface(instance: &wgpu::Instance, native_handle: *mut std::ffi::c_voi
     unsafe { instance.create_surface_unsafe(target).ok() }
 }
 
-fn create_target_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Texture {
-    device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("vello target"),
-        size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
-        usage: wgpu::TextureUsages::STORAGE_BINDING
-             | wgpu::TextureUsages::TEXTURE_BINDING,
-        view_formats: &[],
-    })
-}
-
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn xpa_gpu_surface_create(
     ctx: *mut XpaGpuContext,
@@ -361,21 +296,16 @@ pub unsafe extern "C" fn xpa_gpu_surface_create(
         format,
         width,
         height,
-        present_mode: wgpu::PresentMode::Fifo,
+        present_mode: choose_present_mode(&caps),
         alpha_mode: caps.alpha_modes.first().copied().unwrap_or(wgpu::CompositeAlphaMode::Auto),
         view_formats: vec![],
         desired_maximum_frame_latency: 2,
     };
     surface.configure(&ctx.device, &config);
 
-    let target_texture = create_target_texture(&ctx.device, width, height);
-    let blitter = wgpu::util::TextureBlitter::new(&ctx.device, format);
-
     Box::into_raw(Box::new(XpaGpuSurface {
         surface,
         config,
-        target_texture: Some(target_texture),
-        blitter,
     }))
 }
 
@@ -401,11 +331,13 @@ pub unsafe extern "C" fn xpa_gpu_surface_resize(
     if width == 0 || height == 0 {
         return;
     }
+    if surface.config.width == width && surface.config.height == height {
+        return;
+    }
 
     surface.config.width = width;
     surface.config.height = height;
     surface.surface.configure(&ctx.device, &surface.config);
-    surface.target_texture = Some(create_target_texture(&ctx.device, width, height));
 }
 
 // ─── Scene ───
@@ -413,7 +345,7 @@ pub unsafe extern "C" fn xpa_gpu_surface_resize(
 #[unsafe(no_mangle)]
 pub extern "C" fn xpa_scene_create() -> *mut XpaScene {
     Box::into_raw(Box::new(XpaScene {
-        inner: Scene::new(),
+        _private: (),
     }))
 }
 
@@ -428,8 +360,7 @@ pub unsafe extern "C" fn xpa_scene_destroy(scene: *mut XpaScene) {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn xpa_scene_clear(scene: *mut XpaScene) {
-    let scene = unsafe { &mut *scene };
-    scene.inner.reset();
+    let _scene = unsafe { &mut *scene };
 }
 
 // ─── Render ───
@@ -440,44 +371,29 @@ pub unsafe extern "C" fn xpa_gpu_render(
     surface: *mut XpaGpuSurface,
     scene: *mut XpaScene,
 ) {
-    let ctx = unsafe { &mut *ctx };
+    let ctx = unsafe { &*ctx };
     let surface = unsafe { &mut *surface };
-    let scene = unsafe { &*scene };
+    let _scene = unsafe { &mut *scene };
 
-    let width = surface.config.width;
-    let height = surface.config.height;
-
-    // Get the target texture vello will render into
-    let target = match surface.target_texture.as_ref() {
-        Some(t) => t,
-        None => return,
-    };
-
-    // Draw a test circle into the scene if it's empty (demo)
-    // In production, the C side builds the scene before calling render
-
-    // Render scene to offscreen texture
-    let target_view = target.create_view(&Default::default());
-
-    if let Err(e) = ctx.renderer.render_to_texture(
-        &ctx.device,
-        &ctx.queue,
-        &scene.inner,
-        &target_view,
-        &RenderParams {
-            base_color: Color::from_rgb8(40, 40, 60),
-            width,
-            height,
-            antialiasing_method: AaConfig::Msaa8,
-        },
-    ) {
-        eprintln!("xpa: vello render failed: {e}");
-        return;
-    }
-
-    // Acquire swapchain texture and blit
     let frame = match surface.surface.get_current_texture() {
         Ok(f) => f,
+        Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+            surface.surface.configure(&ctx.device, &surface.config);
+            match surface.surface.get_current_texture() {
+                Ok(f) => f,
+                Err(e) => {
+                    eprintln!("xpa: failed to get surface texture after reconfigure: {e}");
+                    return;
+                }
+            }
+        }
+        Err(wgpu::SurfaceError::Timeout) => {
+            return;
+        }
+        Err(wgpu::SurfaceError::OutOfMemory) => {
+            eprintln!("xpa: failed to get surface texture: out of memory");
+            return;
+        }
         Err(e) => {
             eprintln!("xpa: failed to get surface texture: {e}");
             return;
@@ -485,10 +401,32 @@ pub unsafe extern "C" fn xpa_gpu_render(
     };
 
     let frame_view = frame.texture.create_view(&Default::default());
-
     let mut encoder = ctx.device.create_command_encoder(&Default::default());
-    surface.blitter.copy(&ctx.device, &mut encoder, &target_view, &frame_view);
+    {
+        let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("xpa clear pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &frame_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.16,
+                        g: 0.16,
+                        b: 0.24,
+                        a: 1.0,
+                    }),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+    }
     ctx.queue.submit(std::iter::once(encoder.finish()));
 
     frame.present();
 }
+

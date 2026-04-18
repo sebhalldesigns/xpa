@@ -26,6 +26,8 @@
 #include <windowsx.h>
 
 #include <string>
+#include <vector>
+#include <algorithm>
 #include <stdio.h>
 #include <time.h>
 
@@ -41,6 +43,10 @@ typedef struct {
     HWND          hwnd;
     XpaGpuSurface* surface;
     XpaScene*     scene;
+    uint32_t      pending_width;
+    uint32_t      pending_height;
+    bool          needs_resize;
+    bool          render_queued;
 } xpa_window_internal_t;
 
 /***************************************************************
@@ -50,6 +56,8 @@ typedef struct {
 static HINSTANCE instance_handle;
 static WNDCLASSW window_class;
 static bool running = true;
+static std::vector<xpa_window_internal_t*> windows;
+static const UINT WM_XPA_RENDER = WM_APP + 1;
 
 static double xpa_now_ms(void)
 {
@@ -128,6 +136,10 @@ bool xpa_backend_create_window(const char *title, uint32_t width, uint32_t heigh
     data->hwnd = win32_window;
     data->surface = NULL;
     data->scene = xpa_scene_create();
+    data->pending_width = width;
+    data->pending_height = height;
+    data->needs_resize = false;
+    data->render_queued = false;
 
     if (!data->scene || !xpa_create_surface_for_window((void*)win32_window, width, height, &data->surface))
     {
@@ -149,6 +161,7 @@ bool xpa_backend_create_window(const char *title, uint32_t width, uint32_t heigh
     printf("[xpa] scene + gpu surface ready at +%.2f ms\n", xpa_now_ms() - start_ms);
 
     SetWindowLongPtr(win32_window, GWLP_USERDATA, (LONG_PTR)data);
+    windows.push_back(data);
 
     ShowWindow(win32_window, SW_SHOW);
     UpdateWindow(win32_window);
@@ -164,27 +177,17 @@ int xpa_backend_run(void)
 {
     running = true;
 
+    MSG msg;
     while (running)
     {
-
-        MSG msg;
-        while (PeekMessageW(&msg, 0, 0, 0, PM_REMOVE))
+        BOOL got_message = GetMessageW(&msg, 0, 0, 0);
+        if (got_message <= 0)
         {
-            if (msg.message == WM_QUIT)
-            {
-                running = false;
-                printf("QUIT\n");
-            }
-            else
-            {
-                TranslateMessage(&msg);
-                DispatchMessageW(&msg);
-            }
+            break;
         }
 
-        Sleep(0);
-        YieldProcessor();
-
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
     }
 
     return 0;
@@ -199,51 +202,115 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
 {
     xpa_window_internal_t* data = get_window_data(window);
 
-
     switch (msg)
     {
         case WM_CLOSE:
         {
-            running = false;
-            printf("CLOSE\n");
-        } break;
+            DestroyWindow(window);
+            return 0;
+        }
+
+        case WM_ERASEBKGND:
+        {
+            return 1;
+        }
 
         case WM_SIZE:
         {
-            if (data && data->surface)
+            if (data && data->surface && wparam != SIZE_MINIMIZED)
             {
-                uint32_t w = LOWORD(lparam);
-                uint32_t h = HIWORD(lparam);
-                if (w > 0 && h > 0)
+                uint32_t width = LOWORD(lparam);
+                uint32_t height = HIWORD(lparam);
+                if (width > 0 && height > 0)
                 {
-                    xpa_gpu_surface_resize(xpa_get_gpu_context(), data->surface, w, h);
+                    data->pending_width = width;
+                    data->pending_height = height;
+                    data->needs_resize = true;
+
+                    if (!data->render_queued)
+                    {
+                        data->render_queued = true;
+
+                        if (!PostMessageW(data->hwnd, WM_XPA_RENDER, 0, 0))
+                        {
+                            data->render_queued = false;
+                        }
+                    }
                 }
             }
-        } break;
+            return 0;
+        }
 
-        case WM_PAINT:
+        case WM_XPA_RENDER:
         {
             if (data && data->surface)
             {
-                PAINTSTRUCT ps;
-                BeginPaint(window, &ps);
+                if (data->needs_resize)
+                {
+                    xpa_gpu_surface_resize(
+                        xpa_get_gpu_context(),
+                        data->surface,
+                        data->pending_width,
+                        data->pending_height
+                    );
+                    data->needs_resize = false;
+                }
 
-                // Clear and rebuild scene from current app state
-                xpa_scene_clear(data->scene);
-                // ... app-specific drawing would go here via a callback
                 xpa_gpu_render(xpa_get_gpu_context(), data->surface, data->scene);
+            }
+            return 0;
+        }
 
-                EndPaint(window, &ps);
-            }
-            else
+        case WM_PAINT:
+        {
+            PAINTSTRUCT ps;
+            BeginPaint(window, &ps);
+            EndPaint(window, &ps);
+
+            if (data && data->surface && !data->render_queued)
             {
-                // Fallback before GPU is ready
-                PAINTSTRUCT ps;
-                HDC hdc = BeginPaint(window, &ps);
-                FillRect(hdc, &ps.rcPaint, (HBRUSH)(COLOR_WINDOW + 1));
-                EndPaint(window, &ps);
+                data->render_queued = true;
+
+                if (!PostMessageW(data->hwnd, WM_XPA_RENDER, 0, 0))
+                {
+                    data->render_queued = false;
+                }
             }
-        } break;
+            return 0;
+        }
+
+        case WM_NCDESTROY:
+        {
+            if (data)
+            {
+                SetWindowLongPtr(window, GWLP_USERDATA, 0);
+
+                if (data->surface)
+                {
+                    xpa_gpu_surface_destroy(data->surface);
+                    data->surface = NULL;
+                }
+
+                if (data->scene)
+                {
+                    xpa_scene_destroy(data->scene);
+                    data->scene = NULL;
+                }
+
+                windows.erase(
+                    std::remove(windows.begin(), windows.end(), data),
+                    windows.end()
+                );
+                delete data;
+            }
+
+            if (windows.empty())
+            {
+                running = false;
+                PostQuitMessage(0);
+            }
+            return 0;
+        }
 
         default:
         {
@@ -258,7 +325,6 @@ static xpa_window_internal_t* get_window_data(HWND hwnd)
 {
     return (xpa_window_internal_t*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
 }
-
 
 static std::string wide_to_utf8(const std::wstring& w)
 {
