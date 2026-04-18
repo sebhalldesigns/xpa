@@ -50,10 +50,18 @@ typedef struct
 extern const uint8_t webui_index_html[];
 extern const uint32_t webui_index_html_size;
 
+/* CSS */
+extern const uint8_t webui_assets_style_css[];
+extern const uint32_t webui_assets_style_css_size;
+
+/* JAVASCRIPT */
+extern const uint8_t webui_assets_index_js[];
+extern const uint32_t webui_assets_index_js_size;
 
 static web_resource_t resources[] = {
     {webui_index_html, &webui_index_html_size, "/index.html", TEXT_HTML},
-
+    {webui_assets_style_css, &webui_assets_style_css_size, "/assets/style.css", TEXT_CSS},
+    {webui_assets_index_js, &webui_assets_index_js_size, "/assets/index.js", TEXT_JAVASCRIPT}
 };
 
 /***************************************************************
