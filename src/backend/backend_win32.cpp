@@ -114,8 +114,10 @@ static float ui_threshold = 0.45f;
 static nk_size ui_load_pct = 42;
 static int ui_channel_index = 0;
 static char ui_filter_text[64] = "0x180";
+static char ui_menu_search_text[128] = "";
 static float ui_chart_phase = 0.0f;
 static float ui_chart_values[24] = {0};
+static struct nk_font *ui_font_semibold = NULL;
 
 /***************************************************************
 ** MARK: STATIC FUNCTION DEFS
@@ -340,6 +342,10 @@ bool xpa_backend_create_window(const char *title, uint32_t width, uint32_t heigh
         fprintf(stderr, "Failed to activate OpenGL 3.3 rendering context.");
     }
 
+    if (wglSwapIntervalEXT) {
+        wglSwapIntervalEXT(1);   // enable vsync
+    }
+
     if (!gladLoadGL()) 
     {
         fprintf(stderr, "Failed to load OpenGL functions\n");
@@ -368,6 +374,12 @@ bool xpa_backend_create_window(const char *title, uint32_t width, uint32_t heigh
     struct nk_font *font = nk_font_atlas_add_from_file(atlas, font_path, font_size, &cfg);
     if (!font)
         font = nk_font_atlas_add_default(atlas, font_size, &cfg);
+
+    char semibold_font_path[MAX_PATH];
+    ExpandEnvironmentStringsA("%WINDIR%\\Fonts\\seguisb.ttf", semibold_font_path, MAX_PATH);
+    ui_font_semibold = nk_font_atlas_add_from_file(atlas, semibold_font_path, font_size, &cfg);
+    if (!ui_font_semibold)
+        ui_font_semibold = font;
 
     if (font)
         atlas->default_font = font;
@@ -474,108 +486,192 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
 
                 
                 const struct nk_user_font *f = ctx.style.font;
+                const struct nk_user_font *brand_font = ui_font_semibold ? &ui_font_semibold->handle : f;
                 const float menu_popup_rounding = 8.0f;
 
+                auto text_width_for = [](const struct nk_user_font *font, const char *txt) -> float {
+                    if (!font || !txt)
+                        return 0.0f;
+                    return font->width(font->userdata, font->height, txt, (int)strlen(txt));
+                };
+
                 if (nk_begin(&ctx, "Main Menu",
-                    nk_rect(0.0f, 0.0f, (float)data->width, 30.0f),
+                    nk_rect(0.0f, 0.0f, (float)data->width, 32.0f),
                     NK_WINDOW_NO_SCROLLBAR))
                 {
-
-                    
-                    
-                    const int num_menus = 4;
-                    const char *labels[num_menus] = {"File", "Edit", "View", "Help"};
-
-                    const int items_per_menu = 8;
-
-                    const char *menu_items[][items_per_menu] = {
+                    enum { num_menus = 4, items_per_menu = 8 };
+                    const char *menu_labels[num_menus] = {"File", "Edit", "View", "Help"};
+                    const char *menu_items[num_menus][items_per_menu] = {
                         {"New...", "Open...", "Open Workspace...", "Save", "Save As...", "Settings", "Exit", ""},
-                        {"Cut", "Copy", "Paste", "Find", "", "", "", ""},
-                        {"New Window", "Open Layout", "Save Layout As...", "", "", "", "", ""},
-                        {"Documentation", "About", "", "", "", "", "", ""},
-                        
+                        {"Cut", "Copy", "Paste", "Find", "Replace", "", "", ""},
+                        {"New Window", "Open Layout", "Save Layout As...", "Reset Layout", "", "", "", ""},
+                        {"Documentation", "About", "", "", "", "", "", ""}
+                    };
+                    const char *menu_shortcuts[num_menus][items_per_menu] = {
+                        {"Ctrl+N", "Ctrl+O", "", "Ctrl+S", "Ctrl+Shift+S", "Ctrl+,", "Alt+F4", ""},
+                        {"Ctrl+X", "Ctrl+C", "Ctrl+V", "Ctrl+F", "Ctrl+H", "", "", ""},
+                        {"", "", "", "", "", "", "", ""},
+                        {"F1", "", "", "", "", "", "", ""}
                     };
 
-                    const char *menu_shortcuts[][items_per_menu] = {
-                        {"Ctrl+N", "Ctrl+O", "", "Ctrl+S", "Ctrl+Shift+S", "Ctrl+,", "Alt+F4", ""},
-                        {"Ctrl+X", "Ctrl+C", "Ctrl+V", "Ctrl+F", "", "", "", ""},
-                        {"", "", "", "", "", "", "", ""},
-                        {"", "", "", "", "", "", "", ""},
-                    };
+                    const float left_margin = 8.0f;
+                    const float row_y = 4.0f;
+                    const float row_h = 20.0f;
+                    const float menu_content_y = row_y - 2.0f;
+                    const float control_y = row_y;
+                    const float control_h = row_h - 2.0f;
+                    const float section_gap = 4.0f;
+                    const float menu_item_gap = 2.0f;
+                    const float button_gap = 8.0f;
+                    const float right_gap = 100.0f;
+
+                    const float label_w = text_width_for(brand_font, "BusLab") + 6.0f;
+
+                    float menu_item_w[num_menus] = {0};
+                    float menu_total_w = 0.0f;
+                    for (int i = 0; i < num_menus; ++i)
+                    {
+                        menu_item_w[i] = text_width_for(f, menu_labels[i]) + (ctx.style.menu_button.padding.x * 2.0f) + 8.0f;
+                        menu_total_w += menu_item_w[i];
+                    }
+                    menu_total_w += menu_item_gap * (num_menus - 1);
+
+                    const float menu_x_start = left_margin + label_w + section_gap;
+                    const float left_block_end = menu_x_start + menu_total_w;
+
+                    const float button_chrome = (ctx.style.button.padding.x * 2.0f) + 12.0f;
+                    const float settings_w = text_width_for(f, "Settings") + button_chrome;
+                    const float help_w = text_width_for(f, "Help") + button_chrome;
+                    const float help_x = (float)data->width - right_gap - help_w;
+                    const float settings_x = help_x - button_gap - settings_w;
+
+                    const float center_x = (float)data->width * 0.5f;
+                    const float search_pref_w = 300.0f;
+                    const float search_min_w = 150.0f;
+                    const float max_centered_left_w = 2.0f * (center_x - (left_block_end + section_gap));
+                    const float max_centered_right_w = 2.0f * ((settings_x - section_gap) - center_x);
+                    float max_centered_w = NK_MIN(max_centered_left_w, max_centered_right_w);
+                    if (max_centered_w < 0.0f)
+                        max_centered_w = 0.0f;
+
+                    float search_w = search_pref_w;
+                    if (search_w > max_centered_w)
+                        search_w = max_centered_w;
+                    if (search_w < search_min_w && max_centered_w >= search_min_w)
+                        search_w = search_min_w;
+                    const float search_x = center_x - (search_w * 0.5f);
+
+                    nk_bool pushed_button_padding = nk_style_push_vec2(
+                        &ctx, &ctx.style.button.padding, nk_vec2(5.0f, 0.0f));
+                    nk_bool pushed_button_touch_padding = nk_style_push_vec2(
+                        &ctx, &ctx.style.button.touch_padding, nk_vec2(0.0f, 0.0f));
+                    nk_bool pushed_edit_padding = nk_style_push_vec2(
+                        &ctx, &ctx.style.edit.padding, nk_vec2(3.0f, 0.0f));
+                    nk_bool pushed_edit_row_padding = nk_style_push_float(
+                        &ctx, &ctx.style.edit.row_padding, 0.0f);
+                    nk_bool pushed_button_border = nk_style_push_float(
+                        &ctx, &ctx.style.button.border, 0.0f);
+                    nk_bool pushed_edit_border = nk_style_push_float(
+                        &ctx, &ctx.style.edit.border, 0.0f);
 
                     nk_menubar_begin(&ctx);
+                    nk_layout_space_begin(&ctx, NK_STATIC, row_h, num_menus + 4);
 
-                    nk_layout_row_begin(&ctx, NK_STATIC, 22, num_menus);
+                    nk_layout_space_push(&ctx, nk_rect(left_margin, menu_content_y, label_w, row_h));
+                    nk_bool pushed_brand_font = nk_false;
+                    if (brand_font)
+                        pushed_brand_font = nk_style_push_font(&ctx, brand_font);
+                    nk_label(&ctx, "BusLab", NK_TEXT_LEFT);
+                    if (pushed_brand_font)
+                        nk_style_pop_font(&ctx);
 
-                    for (int i = 0; i < num_menus; i++)
+                    float menu_x = menu_x_start;
+                    for (int i = 0; i < num_menus; ++i)
                     {
-                        float text_width = f->width(f->userdata, f->height, labels[i], (int)strlen(labels[i]));
-                        float menu_pad = ctx.style.menu_button.padding.x * 2;
-                        nk_layout_row_push(&ctx, text_width + menu_pad + 8.0f);
+                        nk_layout_space_push(&ctx, nk_rect(menu_x, menu_content_y, menu_item_w[i], row_h));
 
                         nk_bool pushed_rounding = nk_style_push_float(
                             &ctx, &ctx.style.window.rounding, menu_popup_rounding);
 
                         int menu_item_count = 0;
-                        for (int j = 0; j < items_per_menu; j++)
+                        for (int j = 0; j < items_per_menu; ++j)
                         {
                             if (menu_items[i][j][0] != '\0')
                                 menu_item_count++;
                         }
 
-                        if (nk_menu_begin_label(&ctx, labels[i], NK_TEXT_CENTERED, nk_vec2(160, menu_item_count * 28 + 4)))
+                        const float popup_item_row_h = 24.0f + ctx.style.window.spacing.y;
+                        const float popup_h = ctx.style.window.menu_padding.y +
+                            (menu_item_count * popup_item_row_h);
+
+                        if (nk_menu_begin_label(&ctx, menu_labels[i], NK_TEXT_CENTERED,
+                            nk_vec2(220.0f, popup_h)))
                         {
-                            
                             struct nk_command_buffer *canvas = nk_window_get_canvas(&ctx);
-
                             nk_layout_row_dynamic(&ctx, 24, 1);
-
-                            for (int j = 0; j < menu_item_count; j++)
+                            for (int j = 0; j < menu_item_count; ++j)
                             {
-                            
                                 if (nk_menu_item_label(&ctx, menu_items[i][j], NK_TEXT_LEFT))
                                 {
-                                    printf("[ui] %s -> %s clicked\n", labels[i], menu_items[i][j]);
+                                    printf("[ui] %s -> %s clicked\n", menu_labels[i], menu_items[i][j]);
                                     if (strcmp(menu_items[i][j], "Exit") == 0)
                                         PostQuitMessage(0);
                                 }
 
-                                /* Get the rect of the widget that was just drawn */
                                 struct nk_rect bounds = nk_layout_widget_bounds(&ctx);
-                                //bounds.y -= (24 + ctx.style.window.spacing.y);
-
-
                                 const char *shortcut = menu_shortcuts[i][j];
                                 if (shortcut[0] != '\0')
                                 {
                                     float pad = ctx.style.contextual_button.padding.x;
-                                    float shortcut_w = f->width(f->userdata, f->height, shortcut, (int)strlen(shortcut));
-
+                                    float shortcut_w = text_width_for(f, shortcut);
                                     struct nk_rect sc_rect;
                                     sc_rect.x = bounds.x + bounds.w - shortcut_w - pad;
                                     sc_rect.y = bounds.y + 4.0f;
                                     sc_rect.w = shortcut_w;
                                     sc_rect.h = bounds.h;
-
-                                    nk_draw_text(canvas, sc_rect,
-                                        shortcut, (int)strlen(shortcut), ctx.style.font,
+                                    nk_draw_text(canvas, sc_rect, shortcut, (int)strlen(shortcut), f,
                                         nk_rgba(0, 0, 0, 0), nk_rgb(110, 110, 135));
                                 }
-
                             }
-
                             nk_menu_end(&ctx);
                         }
+
                         if (pushed_rounding)
                             nk_style_pop_float(&ctx);
+
+                        menu_x += menu_item_w[i] + menu_item_gap;
                     }
 
-                    nk_layout_row_end(&ctx);
+                    nk_layout_space_push(&ctx, nk_rect(search_x, control_y, search_w, control_h));
+                    if (search_w >= 40.0f)
+                        nk_edit_string_zero_terminated(&ctx, NK_EDIT_FIELD,
+                            ui_menu_search_text, (int)sizeof(ui_menu_search_text), nk_filter_default);
+                    else
+                        nk_label(&ctx, "", NK_TEXT_LEFT);
 
+                    nk_layout_space_push(&ctx, nk_rect(settings_x, control_y, settings_w, control_h));
+                    if (nk_button_label(&ctx, "Settings"))
+                        printf("[ui] Settings clicked\n");
 
+                    nk_layout_space_push(&ctx, nk_rect(help_x, control_y, help_w, control_h));
+                    if (nk_button_label(&ctx, "Help"))
+                        printf("[ui] Help clicked\n");
+
+                    nk_layout_space_end(&ctx);
                     nk_menubar_end(&ctx);
 
-
+                    if (pushed_edit_border)
+                        nk_style_pop_float(&ctx);
+                    if (pushed_button_border)
+                        nk_style_pop_float(&ctx);
+                    if (pushed_edit_row_padding)
+                        nk_style_pop_float(&ctx);
+                    if (pushed_edit_padding)
+                        nk_style_pop_vec2(&ctx);
+                    if (pushed_button_touch_padding)
+                        nk_style_pop_vec2(&ctx);
+                    if (pushed_button_padding)
+                        nk_style_pop_vec2(&ctx);
                 }
 
 
