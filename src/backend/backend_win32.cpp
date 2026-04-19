@@ -472,150 +472,57 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
                 /* End input collection, build UI, render */
                 nk_input_end(&ctx);
 
-                static const char *channel_items[] = {"CAN0", "CAN1", "LIN0", "SIM"};
-                bool request_close = false;
-
-                /* Push styles for the menu bar window specifically */
-                nk_style_push_vec2(&ctx, &ctx.style.window.padding, nk_vec2(0, 0));
-                nk_style_push_vec2(&ctx, &ctx.style.window.spacing, nk_vec2(0, 0));
-                nk_style_push_float(&ctx, &ctx.style.window.border, 0.0f);
+                
+                const struct nk_user_font *f = ctx.style.font;
 
                 if (nk_begin(&ctx, "Main Menu",
                     nk_rect(0.0f, 0.0f, (float)data->width, 30.0f),
                     NK_WINDOW_NO_SCROLLBAR))
                 {
                     nk_menubar_begin(&ctx);
-                    nk_layout_row_begin(&ctx, NK_STATIC, 26, 4);
-                    
-                    nk_layout_row_push(&ctx, 60);
-                    if (nk_menu_begin_label(&ctx, "File", NK_TEXT_CENTERED, nk_vec2(160, 150)))
-                    {
-                         nk_layout_row_dynamic(&ctx, 24, 1);
-                        if (nk_menu_item_label(&ctx, "Open DBC...", NK_TEXT_LEFT))
-                            printf("[ui] Open DBC clicked\n");
-                        if (nk_menu_item_label(&ctx, "Export Log...", NK_TEXT_LEFT))
-                            printf("[ui] Export Log clicked\n");
-                        if (nk_menu_item_label(&ctx, "Quit", NK_TEXT_LEFT))
-                            request_close = true;
-                        nk_menu_end(&ctx);
-                    }
 
-                    nk_layout_row_push(&ctx, 60);
-                    if (nk_menu_begin_label(&ctx, "View", NK_TEXT_CENTERED, nk_vec2(180, 140)))
-                    {
-                        nk_layout_row_dynamic(&ctx, 24, 1);
-                        if (nk_menu_item_label(&ctx,
-                            ui_show_metrics ? "Hide Metrics" : "Show Metrics",
-                            NK_TEXT_LEFT))
-                            ui_show_metrics = !ui_show_metrics;
-                        if (nk_menu_item_label(&ctx,
-                            ui_enable_filter ? "Disable Filter" : "Enable Filter",
-                            NK_TEXT_LEFT))
-                            ui_enable_filter = !ui_enable_filter;
-                        nk_menu_end(&ctx);
-                    }
+                    nk_layout_row_begin(&ctx, NK_STATIC, 22, 3);
 
-                    nk_layout_row_push(&ctx, 60);
-                    if (nk_menu_begin_label(&ctx, "Tools", NK_TEXT_CENTERED, nk_vec2(180, 130)))
+                    const char *labels[] = {"File", "View", "Tools"};
+                    for (int i = 0; i < 3; i++)
                     {
-                        nk_layout_row_dynamic(&ctx, 24, 1);
-                        if (nk_menu_item_label(&ctx, "Reset Session", NK_TEXT_LEFT))
+                        float text_width = f->width(f->userdata, f->height, labels[i], (int)strlen(labels[i]));
+                        float menu_pad = ctx.style.menu_button.padding.x * 2;
+                        nk_layout_row_push(&ctx, text_width + menu_pad + 8.0f);
+
+                        if (nk_menu_begin_label(&ctx, labels[i], NK_TEXT_CENTERED, nk_vec2(160, 200)))
                         {
-                            ui_mode = 0;
-                            ui_rate_hz = 50;
-                            ui_threshold = 0.45f;
-                            ui_load_pct = 42;
-                            ui_channel_index = 0;
-                            memset(ui_filter_text, 0, sizeof(ui_filter_text));
-                            memcpy(ui_filter_text, "0x180", sizeof("0x180"));
+                            nk_layout_row_dynamic(&ctx, 24, 1);
+                            if (i == 0) /* File */
+                            {
+                                if (nk_menu_item_label(&ctx, "Open DBC...", NK_TEXT_LEFT))
+                                    printf("[ui] Open DBC clicked\n");
+                                if (nk_menu_item_label(&ctx, "Quit", NK_TEXT_LEFT))
+                                    PostQuitMessage(0);
+                            }
+                            else if (i == 1) /* View */
+                            {
+                                nk_menu_item_label(&ctx, "Show Metrics", NK_TEXT_LEFT);
+                            }
+                            else if (i == 2) /* Tools */
+                            {
+                                nk_menu_item_label(&ctx, "Reset Session", NK_TEXT_LEFT);
+                            }
+                            nk_menu_end(&ctx);
                         }
-                        if (nk_menu_item_label(&ctx, "Clear Metrics", NK_TEXT_LEFT))
-                        {
-                            memset(ui_chart_values, 0, sizeof(ui_chart_values));
-                        }
-                        nk_menu_end(&ctx);
                     }
-
-
-                     nk_layout_row_push(&ctx, 60);
-                    if (nk_menu_begin_label(&ctx, "Help", NK_TEXT_CENTERED, nk_vec2(180, 130)))
-                    {
-                        nk_layout_row_dynamic(&ctx, 24, 1);
-                        if (nk_menu_item_label(&ctx, "About", NK_TEXT_LEFT))
-                            printf("[ui] BusLab + Nuklear demo UI\n");
-                        nk_menu_end(&ctx);
-                    }
-
 
                     nk_layout_row_end(&ctx);
+
                     nk_menubar_end(&ctx);
                 }
                 nk_end(&ctx);
 
-                nk_style_pop_float(&ctx);
-                nk_style_pop_vec2(&ctx);
-                nk_style_pop_vec2(&ctx);
-
-            
-                if (request_close)
-                    PostMessageW(window, WM_CLOSE, 0, 0);
-
-                if (nk_begin(&ctx, "Control Frame", nk_rect(20.0f, 48.0f, 420.0f, 520.0f),
-                    NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE | NK_WINDOW_TITLE))
-                {
-                    nk_layout_row_dynamic(&ctx, 24, 1);
-                    nk_label(&ctx, "Bus Session", NK_TEXT_LEFT);
-
-                    nk_layout_row_dynamic(&ctx, 28, 2);
-                    if (nk_button_label(&ctx, "Start Capture"))
-                        printf("[ui] Capture started\n");
-                    if (nk_button_label(&ctx, "Stop"))
-                        printf("[ui] Capture stopped\n");
-
-                    nk_layout_row_dynamic(&ctx, 24, 1);
-                    nk_checkbox_label(&ctx, "Enable ID Filter", &ui_enable_filter);
-                    nk_checkbox_label(&ctx, "Show Metrics", &ui_show_metrics);
-
-                    nk_layout_row_dynamic(&ctx, 24, 2);
-                    if (nk_option_label(&ctx, "Live", ui_mode == 0)) ui_mode = 0;
-                    if (nk_option_label(&ctx, "Playback", ui_mode == 1)) ui_mode = 1;
-
-                    nk_layout_row_dynamic(&ctx, 28, 1);
-                    nk_property_int(&ctx, "Rate (Hz)", 1, &ui_rate_hz, 500, 1, 1.0f);
-                    nk_property_float(&ctx, "Threshold", 0.0f, &ui_threshold, 1.0f, 0.01f, 0.01f);
-
-                    nk_layout_row_dynamic(&ctx, 24, 2);
-                    nk_label(&ctx, "Channel", NK_TEXT_LEFT);
-                    ui_channel_index = nk_combo(&ctx, channel_items, 4, ui_channel_index, 24, nk_vec2(220, 220));
-
-                    nk_layout_row_dynamic(&ctx, 24, 1);
-                    nk_label(&ctx, "Filter (CAN ID / expression)", NK_TEXT_LEFT);
-                    nk_layout_row_dynamic(&ctx, 28, 1);
-                    nk_edit_string_zero_terminated(&ctx, NK_EDIT_FIELD, ui_filter_text,
-                        (int)sizeof(ui_filter_text), nk_filter_default);
-
-                    nk_layout_row_dynamic(&ctx, 28, 1);
-                    nk_progress(&ctx, &ui_load_pct, 100, nk_true);
-
-                    ui_chart_phase += 0.08f;
-                    if (ui_chart_phase >= 6.283185307f)
-                        ui_chart_phase -= 6.283185307f;
-                    memmove(&ui_chart_values[0], &ui_chart_values[1], sizeof(float) * 23);
-                    ui_chart_values[23] = 0.5f + 0.45f * sinf(ui_chart_phase);
-
-                    if (ui_show_metrics && nk_chart_begin(&ctx, NK_CHART_LINES, 24, 0.0f, 1.0f))
-                    {
-                        for (int i = 0; i < 24; ++i)
-                            nk_chart_push(&ctx, ui_chart_values[i]);
-                        nk_chart_end(&ctx);
-                    }
-                }
-                nk_end(&ctx);
-
+        
             
                 glViewport(0, 0, data->width, data->height);
                 glDisable(GL_SCISSOR_TEST);
-                glClearColor(0.1f, 0.15f, 0.2f, 1.0f);
+                glClearColor(0.4f, 0.4f, 0.4f, 1.0f);
                 glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
                 nk_gl3_render(&ctx, data->width, data->height);
@@ -829,7 +736,7 @@ static void xpa_set_theme(struct nk_context *ctx)
     s->window.background            = bg;
     s->window.fixed_background      = nk_style_item_color(panel);
     s->window.border_color          = border;
-    s->window.border                = 1.0f;
+    s->window.border                = 0.0f;
     s->window.header.normal         = nk_style_item_color(header);
     s->window.header.hover          = nk_style_item_color(header);
     s->window.header.active         = nk_style_item_color(header);
@@ -837,21 +744,9 @@ static void xpa_set_theme(struct nk_context *ctx)
     s->window.header.label_hover    = text;
     s->window.header.label_active   = text;
     s->window.header.padding        = nk_vec2(4, 2);
-    s->window.padding               = nk_vec2(6, 6);
+    s->window.padding               = nk_vec2(4, 4);
     s->window.spacing               = nk_vec2(4, 4);
     s->window.group_padding         = nk_vec2(4, 4);
-
-    /* Menu bar button (the "File", "Edit" etc labels) */
-    #if 0
-    s->window.menu_button.normal    = nk_style_item_color(nk_rgba(0, 0, 0, 0));
-    s->window.menu_button.hover     = nk_style_item_color(hover);
-    s->window.menu_button.active    = nk_style_item_color(active);
-    s->window.menu_button.text_normal = text;
-    s->window.menu_button.text_hover  = text;
-    s->window.menu_button.text_active = text;
-    s->window.menu_button.padding   = nk_vec2(8, 4);
-    #endif
-    s->window.menu_border_color     = border;
 
     /* Menu popup background */
     s->window.contextual_border_color = border;
@@ -889,7 +784,10 @@ static void xpa_set_theme(struct nk_context *ctx)
     s->menu_button.text_normal  = text;
     s->menu_button.text_hover   = nk_rgb(255, 255, 255);
     s->menu_button.text_active  = nk_rgb(255, 255, 255);
-    s->menu_button.padding      = nk_vec2(12, 4);
+    s->menu_button.padding      = nk_vec2(2, 2);
+    s->menu_button.rounding      = 4.0f;
+    s->menu_button.border      = 0.0f;
+    s->menu_button.touch_padding      = nk_vec2(0, 4);
 
     /* Text */
     s->text.color = text;
