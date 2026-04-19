@@ -23,7 +23,6 @@ extern "C" {
 ***************************************************************/
 
 #include <xpa/xpa.h>
-#include <xpa_rust.h>
 
 /***************************************************************
 ** MARK: CONSTANTS & MACROS
@@ -43,7 +42,6 @@ bool xpa_backend_create_window(const char *title, uint32_t width, uint32_t heigh
 
 int xpa_backend_run(void);
 
-void xpa_backend_webview_load_url(char *url);
 
 
 #ifdef __cplusplus

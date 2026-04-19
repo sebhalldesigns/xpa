@@ -16,8 +16,7 @@
 ***************************************************************/
 
 #include <xpa/xpa.h>
-#include "backend/backend.h"
-#include <xpa_rust.h>
+#include <backend/backend.h>
 
 #include <stdio.h>
 #include <time.h>
@@ -50,9 +49,9 @@ static double xpa_now_ms(void)
 bool xpa_init(void)
 {
     double start_ms = xpa_now_ms();
-    printf("Initializing xpa_rust from C...\n");
+    printf("Initializing xpa\n");
     
-    if (!xpa_backend_init() || !xpa_rust_init())
+    if (!xpa_backend_init())
     {
         return false;
     }
