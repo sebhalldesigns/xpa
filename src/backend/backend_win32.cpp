@@ -22,16 +22,30 @@
 #endif
 #include <windows.h>
 #include <windowsx.h>
-#include <gl/gl.h>
+
+#include <glad/glad.h>
 #include "wglext.h"
 
 #include <stdio.h>
 #include <time.h>
+#include <math.h>
 
 #include <string>
 #include <vector>
 #include <algorithm>
 
+#define NK_INCLUDE_FIXED_TYPES
+#define NK_INCLUDE_STANDARD_IO
+#define NK_INCLUDE_STANDARD_VARARGS
+#define NK_INCLUDE_DEFAULT_ALLOCATOR
+#define NK_INCLUDE_VERTEX_BUFFER_OUTPUT
+#define NK_INCLUDE_FONT_BAKING
+#define NK_INCLUDE_DEFAULT_FONT
+#define NK_IMPLEMENTATION
+#include <nuklear/nuklear.h>
+
+#define NK_GL3_IMPLEMENTATION
+#include "nk_gl3.h"
 
 /***************************************************************
 ** MARK: CONSTANTS & MACROS
@@ -84,7 +98,7 @@ static wglChoosePixelFormatARB_type *wglChoosePixelFormatARB = NULL;
 static PFNWGLSWAPINTERVALEXTPROC wglSwapIntervalEXT = NULL;
 static PFNWGLGETSWAPINTERVALEXTPROC wglGetSwapIntervalEXT = NULL;
 
-
+static struct nk_context ctx;
 static HINSTANCE instance_handle;
 static WNDCLASSW window_class;
 static bool running = true;
@@ -102,6 +116,8 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
 
 static std::string wide_to_utf8(const std::wstring& w);
 static std::wstring utf8_to_wide(const std::string& s);
+static void set_process_dpi_awareness(void);
+static float get_window_dpi_scale(HWND hwnd);
 
 static inline double xpa_now_ms(void)
 {
@@ -116,6 +132,7 @@ static inline double xpa_now_ms(void)
 bool xpa_backend_init(void)
 {
     instance_handle = GetModuleHandle(NULL);
+    set_process_dpi_awareness();
 
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
 
@@ -259,6 +276,10 @@ bool xpa_backend_create_window(const char *title, uint32_t width, uint32_t heigh
     xpa_window_internal_t* data = (xpa_window_internal_t*)calloc(1, sizeof(xpa_window_internal_t));
     data->hwnd = win32_window;
     data->gldc = GetDC(win32_window);
+    RECT client_rect = {0};
+    GetClientRect(win32_window, &client_rect);
+    data->width = client_rect.right - client_rect.left;
+    data->height = client_rect.bottom - client_rect.top;
 
     printf("[xpa] renderer ready at +%.2f ms\n", xpa_now_ms() - start_ms);
 
@@ -306,6 +327,43 @@ bool xpa_backend_create_window(const char *title, uint32_t width, uint32_t heigh
         fprintf(stderr, "Failed to activate OpenGL 3.3 rendering context.");
     }
 
+    if (!gladLoadGL()) 
+    {
+        fprintf(stderr, "Failed to load OpenGL functions\n");
+        return false;
+    }
+
+    nk_gl3_init(&ctx, width, height);
+
+    struct nk_font_atlas *atlas;
+    nk_gl3_font_stash_begin(&atlas);
+
+    struct nk_font_config cfg = nk_font_config(0);
+    cfg.oversample_h = 1;
+    cfg.oversample_v = 1;
+    cfg.pixel_snap = nk_true;
+
+    char font_path[MAX_PATH];
+    ExpandEnvironmentStringsA("%WINDIR%\\Fonts\\segoeui.ttf", font_path, MAX_PATH);
+
+    const float base_font_size = 16.0f;
+    const float dpi_scale = get_window_dpi_scale(win32_window);
+    float font_size = floorf(base_font_size * dpi_scale + 0.5f);
+    if (font_size < 12.0f)
+        font_size = 12.0f;
+
+    struct nk_font *font = nk_font_atlas_add_from_file(atlas, font_path, font_size, &cfg);
+    if (!font)
+        font = nk_font_atlas_add_default(atlas, font_size, &cfg);
+
+    if (font)
+        atlas->default_font = font;
+
+    nk_gl3_font_stash_end(&ctx);
+
+    // Start input collection for the next frame.
+    nk_input_begin(&ctx);
+
     ShowWindow(data->hwnd, SW_SHOW);
     UpdateWindow(data->hwnd);
     
@@ -323,20 +381,26 @@ int xpa_backend_run(void)
     MSG msg;
     while (running)
     {
-        BOOL got_message = GetMessageW(&msg, 0, 0, 0);
-        if (got_message <= 0)
-        {
-            break;
-        }
+        MSG msg;
 
-        TranslateMessage(&msg);
-        DispatchMessageW(&msg);
+        while (PeekMessageW(&msg, 0, 0, 0, PM_REMOVE))
+        {
+            if (msg.message == WM_QUIT)
+            {
+                running = false;
+                break;
+            }
+            
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+ 
+        }
 
         for (xpa_window_internal_t* data : windows)
         {
             InvalidateRect(data->hwnd, NULL, FALSE);
         }
-
+       
     }
 
     return 0;
@@ -384,17 +448,40 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
         {
             if (data)
             {
+
+                
+
                 PAINTSTRUCT ps;
                 BeginPaint(window, &ps);
+
+                 /* End input collection, build UI, render */
+                nk_input_end(&ctx);
+
+                if (nk_begin(&ctx, "Test", nk_rect(20, 20, 300, 200),
+                    NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_TITLE))
+                {
+                    nk_layout_row_dynamic(&ctx, 25, 1);
+                    nk_label(&ctx, "Hello from Nuklear", NK_TEXT_LEFT);
+                    if (nk_button_label(&ctx, "Click me"))
+                        printf("clicked!\n");
+                }
+                nk_end(&ctx);
+
             
                 glViewport(0, 0, data->width, data->height);
                 glDisable(GL_SCISSOR_TEST);
                 glClearColor(0.1f, 0.15f, 0.2f, 1.0f);
                 glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+                nk_gl3_render(&ctx, data->width, data->height);
+
                 
                 SwapBuffers(data->gldc);
 
                 EndPaint(window, &ps);
+
+                /* Begin collecting input for next frame */
+                nk_input_begin(&ctx);
             }
         
             return 0;
@@ -418,6 +505,60 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
                 running = false;
                 PostQuitMessage(0);
             }
+            return 0;
+        }
+
+        case WM_MOUSEMOVE:
+            nk_input_motion(&ctx, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
+            return 0;
+
+        case WM_LBUTTONDOWN:
+            SetCapture(window);
+            nk_input_button(&ctx, NK_BUTTON_LEFT, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), 1);
+            return 0;
+
+        case WM_LBUTTONUP:
+            nk_input_button(&ctx, NK_BUTTON_LEFT, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), 0);
+            ReleaseCapture();
+            return 0;
+
+        case WM_RBUTTONDOWN:
+            nk_input_button(&ctx, NK_BUTTON_RIGHT, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), 1);
+            return 0;
+
+        case WM_RBUTTONUP:
+            nk_input_button(&ctx, NK_BUTTON_RIGHT, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), 0);
+            return 0;
+
+        case WM_MOUSEWHEEL:
+            nk_input_scroll(&ctx, nk_vec2(0, (float)GET_WHEEL_DELTA_WPARAM(wparam) / WHEEL_DELTA));
+            return 0;
+
+        case WM_CHAR:
+            if (wparam >= 32)
+                nk_input_unicode(&ctx, (nk_rune)wparam);
+            return 0;
+
+        case WM_KEYDOWN:
+        case WM_KEYUP:
+        {
+            int down = (msg == WM_KEYDOWN);
+            BOOL ctrl = GetKeyState(VK_CONTROL) & (1 << 15);
+
+            if (wparam == VK_BACK)        nk_input_key(&ctx, NK_KEY_BACKSPACE, down);
+            else if (wparam == VK_DELETE) nk_input_key(&ctx, NK_KEY_DEL, down);
+            else if (wparam == VK_RETURN) nk_input_key(&ctx, NK_KEY_ENTER, down);
+            else if (wparam == VK_TAB)    nk_input_key(&ctx, NK_KEY_TAB, down);
+            else if (wparam == VK_LEFT)   nk_input_key(&ctx, NK_KEY_LEFT, down);
+            else if (wparam == VK_RIGHT)  nk_input_key(&ctx, NK_KEY_RIGHT, down);
+            else if (wparam == VK_UP)     nk_input_key(&ctx, NK_KEY_UP, down);
+            else if (wparam == VK_DOWN)   nk_input_key(&ctx, NK_KEY_DOWN, down);
+            else if (wparam == 'C' && ctrl) nk_input_key(&ctx, NK_KEY_COPY, down);
+            else if (wparam == 'V' && ctrl) nk_input_key(&ctx, NK_KEY_PASTE, down);
+            else if (wparam == 'X' && ctrl) nk_input_key(&ctx, NK_KEY_CUT, down);
+            else if (wparam == 'A' && ctrl) nk_input_key(&ctx, NK_KEY_TEXT_SELECT_ALL, down);
+            else if (wparam == 'Z' && ctrl) nk_input_key(&ctx, NK_KEY_TEXT_UNDO, down);
+            else if (wparam == 'Y' && ctrl) nk_input_key(&ctx, NK_KEY_TEXT_REDO, down);
             return 0;
         }
 
@@ -472,4 +613,54 @@ static std::wstring utf8_to_wide(const std::string& s)
     result.pop_back();
 
     return result;
+}
+
+static void set_process_dpi_awareness(void)
+{
+#ifndef DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+#define DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 ((HANDLE)-4)
+#endif
+#ifndef DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE
+#define DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE ((HANDLE)-3)
+#endif
+
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    if (!user32)
+        return;
+
+    typedef BOOL (WINAPI *SetProcessDpiAwarenessContextProc)(HANDLE);
+    SetProcessDpiAwarenessContextProc set_dpi_context =
+        (SetProcessDpiAwarenessContextProc)GetProcAddress(user32, "SetProcessDpiAwarenessContext");
+
+    if (set_dpi_context)
+    {
+        if (set_dpi_context(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))
+            return;
+        if (set_dpi_context(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE))
+            return;
+    }
+
+    typedef BOOL (WINAPI *SetProcessDPIAwareProc)(void);
+    SetProcessDPIAwareProc set_dpi_aware =
+        (SetProcessDPIAwareProc)GetProcAddress(user32, "SetProcessDPIAware");
+    if (set_dpi_aware)
+        set_dpi_aware();
+}
+
+static float get_window_dpi_scale(HWND hwnd)
+{
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    if (user32)
+    {
+        typedef UINT (WINAPI *GetDpiForWindowProc)(HWND);
+        GetDpiForWindowProc get_dpi_for_window =
+            (GetDpiForWindowProc)GetProcAddress(user32, "GetDpiForWindow");
+        if (get_dpi_for_window)
+        {
+            UINT dpi = get_dpi_for_window(hwnd);
+            if (dpi > 0)
+                return (float)dpi / 96.0f;
+        }
+    }
+    return 1.0f;
 }

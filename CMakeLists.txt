@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 
 project(xpa)
 
+add_subdirectory(extern)
+
 ##############################
 ## XPA
 ##############################
@@ -17,9 +19,12 @@ target_include_directories(xpa PUBLIC
 
 target_include_directories(xpa PRIVATE
     src
+    extern
 )
 
 target_link_libraries(xpa PUBLIC 
     opengl32
+    glad
+    freetype
 )
 
