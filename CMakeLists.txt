@@ -24,6 +24,7 @@ target_include_directories(xpa PRIVATE
 
 target_link_libraries(xpa PUBLIC 
     opengl32
+    dwmapi
     glad
     freetype
 )

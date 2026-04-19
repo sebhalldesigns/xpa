@@ -22,6 +22,8 @@
 #endif
 #include <windows.h>
 #include <windowsx.h>
+#include <dwmapi.h>
+
 
 #include <glad/glad.h>
 #include "wglext.h"
@@ -34,6 +36,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+
 
 #define NK_INCLUDE_FIXED_TYPES
 #define NK_INCLUDE_STANDARD_IO
@@ -51,6 +54,18 @@
 /***************************************************************
 ** MARK: CONSTANTS & MACROS
 ***************************************************************/
+
+#define WINDOW_BUTTONS_WIDTH (140)
+
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
+#ifndef DWMWA_CAPTION_COLOR
+#define DWMWA_CAPTION_COLOR 35
+#endif
+#ifndef DWMWA_BORDER_COLOR
+#define DWMWA_BORDER_COLOR 34
+#endif
 
 
 // See https://www.khronos.org/registry/OpenGL/extensions/ARB/WGL_ARB_create_context.txt for all values
@@ -125,6 +140,7 @@ static struct nk_font *ui_font_semibold = NULL;
 
 static void xpa_set_theme(struct nk_context *ctx);
 
+
 static xpa_window_internal_t* get_window_data(HWND hwnd);
 
 static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, LPARAM lparam);
@@ -133,6 +149,10 @@ static std::string wide_to_utf8(const std::wstring& w);
 static std::wstring utf8_to_wide(const std::string& s);
 static void set_process_dpi_awareness(void);
 static float get_window_dpi_scale(HWND hwnd);
+
+static LRESULT titlebar_hit_test(HWND hwnd, int x, int y, int titlebar_height);
+
+static void apply_dwm_frame(HWND hwnd);
 
 static inline double xpa_now_ms(void)
 {
@@ -284,6 +304,20 @@ bool xpa_backend_create_window(const char *title, uint32_t width, uint32_t heigh
         fprintf(stderr, "Failed to create window.");
         return false;
     }
+
+    MARGINS margins = {0, 0, 32, 0};
+    DwmExtendFrameIntoClientArea(win32_window, &margins);
+
+    SetWindowPos(win32_window, NULL, 0, 0, 0, 0,
+        SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+
+    /* Dark mode caption buttons */
+    BOOL dark_mode = TRUE;
+    DwmSetWindowAttribute(win32_window, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_mode, sizeof(dark_mode));
+
+    /* Caption background — COLORREF is 0x00BBGGRR */
+    COLORREF caption_color = RGB(0, 0, 0);  /* match your theme bg */
+    DwmSetWindowAttribute(win32_window, DWMWA_CAPTION_COLOR, &caption_color, sizeof(caption_color));
 
     printf("[xpa] CreateWindowExW completed at +%.2f ms\n", xpa_now_ms() - start_ms);
 
@@ -442,18 +476,74 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
 {
     xpa_window_internal_t* data = get_window_data(window);
 
+    /* Let DWM handle caption button hit testing first */
+    LRESULT dwm_result = 0;
+    if (DwmDefWindowProc(window, msg, wparam, lparam, &dwm_result))
+    {
+        return dwm_result;
+    }
+        
+
     switch (msg)
     {
+        case WM_CREATE:
+            apply_dwm_frame(window);
+            return 0;
+
+        case WM_DWMCOMPOSITIONCHANGED:
+            apply_dwm_frame(window);
+            return 0;
+
         case WM_CLOSE:
         {
             DestroyWindow(window);
             return 0;
         }
 
+        case WM_NCCALCSIZE:
+        {
+            if (wparam == TRUE)
+            {
+                NCCALCSIZE_PARAMS* params = (NCCALCSIZE_PARAMS*)lparam;
+
+                UINT dpi = GetDpiForWindow(window);
+                int frame_x = GetSystemMetricsForDpi(SM_CXFRAME, dpi);
+                int frame_y = GetSystemMetricsForDpi(SM_CYFRAME, dpi);
+                int padding = GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+
+                // Keep resize borders working.
+                params->rgrc[0].left   += frame_x + padding;
+                params->rgrc[0].right  -= frame_x + padding;
+                params->rgrc[0].bottom -= frame_y + padding;
+
+                /*
+                ** N.B - changing rgrc[0].bottom seems to break the caption buttons
+                ** from when the window is maximised. Don't touch it and handle
+                ** in the client area rendering code instead.
+                */
+
+                return 0;
+            }
+
+            return DefWindowProcW(window, msg, wparam, lparam);
+        }
+
+        case WM_NCHITTEST:
+        {
+      
+            int titlebar_h = 30;  /* match your menu bar height */
+            LRESULT hit = titlebar_hit_test(window,
+                GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), titlebar_h);
+            
+            if (hit != HTCLIENT)
+                return hit;
+            break;
+        }
+
         case WM_ERASEBKGND:
         {
             return 1;
-        }
+        } break;
 
         case WM_SIZE:
         {
@@ -495,8 +585,13 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
                     return font->width(font->userdata, font->height, txt, (int)strlen(txt));
                 };
 
+                float top_inset = 0.0f;
+
+                if (IsZoomed(window))
+                    top_inset += 6.0f; // tune as needed   
+
                 if (nk_begin(&ctx, "Main Menu",
-                    nk_rect(0.0f, 0.0f, (float)data->width, 32.0f),
+                    nk_rect(0.0f, top_inset, (float)data->width - WINDOW_BUTTONS_WIDTH, 32.0f),
                     NK_WINDOW_NO_SCROLLBAR))
                 {
                     enum { num_menus = 4, items_per_menu = 8 };
@@ -677,17 +772,21 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
 
                 nk_end(&ctx);
 
-        
+
+
+ 
             
                 glViewport(0, 0, data->width, data->height);
                 glDisable(GL_SCISSOR_TEST);
-                glClearColor(0.4f, 0.4f, 0.4f, 1.0f);
+                glClearColor(38.0f/255.0f, 38.0f/255.0f, 46.0f/255.0f, 0.0f);
                 glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
                 nk_gl3_render(&ctx, data->width, data->height);
 
                 
                 SwapBuffers(data->gldc);
+
+   
 
                 EndPaint(window, &ps);
 
@@ -708,7 +807,7 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
                     std::remove(windows.begin(), windows.end(), data),
                     windows.end()
                 );
-                delete data;
+                free(data);
             }
 
             if (windows.empty())
@@ -1070,4 +1169,63 @@ static void xpa_set_theme(struct nk_context *ctx)
     s->scrollh.border_cursor    = 0.0f;
 
     s->scrollv = s->scrollh;
+}
+
+
+/* Custom hit testing — returns which part of the window the mouse is over */
+static LRESULT titlebar_hit_test(HWND hwnd, int x, int y, int titlebar_height)
+{
+    POINT pt = { x, y };
+    ScreenToClient(hwnd, &pt);
+
+    RECT rc;
+    GetClientRect(hwnd, &rc);
+
+    const bool maximized = IsZoomed(hwnd);
+    const int border = maximized ? 0 : 6;
+
+    /* Resize borders only when not maximized */
+    if (!maximized)
+    {
+        if (pt.y < border)
+        {
+            if (pt.x < border) return HTTOPLEFT;
+            if (pt.x >= rc.right - border) return HTTOPRIGHT;
+            return HTTOP;
+        }
+
+        if (pt.y >= rc.bottom - border)
+        {
+            if (pt.x < border) return HTBOTTOMLEFT;
+            if (pt.x >= rc.right - border) return HTBOTTOMRIGHT;
+            return HTBOTTOM;
+        }
+
+        if (pt.x < border) return HTLEFT;
+        if (pt.x >= rc.right - border) return HTRIGHT;
+    }
+
+
+    /* Titlebar area — draggable, enables snap/aero shake */
+    if (pt.y < titlebar_height)
+    {
+        // Let your menu/search/widgets be client.
+        if (pt.x < 200 && pt.x > 55)
+            return HTCLIENT;
+
+        // Never treat the system-button area as draggable caption.
+        if (pt.x >= rc.right - WINDOW_BUTTONS_WIDTH)
+            return HTCLIENT;
+
+        return HTCAPTION;
+    }
+        
+
+    return HTCLIENT;
+}
+
+static void apply_dwm_frame(HWND hwnd)
+{
+    MARGINS margins = { 0, 0, 32, 0 };
+    DwmExtendFrameIntoClientArea(hwnd, &margins);
 }
