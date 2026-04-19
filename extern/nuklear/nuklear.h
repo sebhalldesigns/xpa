@@ -20334,6 +20334,8 @@ nk_panel_end(struct nk_context *ctx)
     {
         /* update panel height to fit dynamic growth */
         struct nk_rect empty_space;
+        const float panel_rounding = nk_panel_is_nonblock(layout->type) ? style->window.rounding : 0.0f;
+        float empty_rounding = 0.0f;
         if (layout->at_y < (layout->bounds.y + layout->bounds.h))
             layout->bounds.h = layout->at_y - layout->bounds.y;
 
@@ -20342,14 +20344,20 @@ nk_panel_end(struct nk_context *ctx)
         empty_space.y = layout->bounds.y;
         empty_space.h = panel_padding.y;
         empty_space.w = window->bounds.w;
-        nk_fill_rect(out, empty_space, 0, style->window.background);
+        empty_rounding = panel_rounding;
+        empty_rounding = NK_MIN(empty_rounding, empty_space.w * 0.5f);
+        empty_rounding = NK_MIN(empty_rounding, empty_space.h * 0.5f);
+        nk_fill_rect(out, empty_space, empty_rounding, style->window.background);
 
         /* fill left empty space */
         empty_space.x = window->bounds.x;
         empty_space.y = layout->bounds.y;
         empty_space.w = panel_padding.x + layout->border;
         empty_space.h = layout->bounds.h;
-        nk_fill_rect(out, empty_space, 0, style->window.background);
+        empty_rounding = panel_rounding;
+        empty_rounding = NK_MIN(empty_rounding, empty_space.w * 0.5f);
+        empty_rounding = NK_MIN(empty_rounding, empty_space.h * 0.5f);
+        nk_fill_rect(out, empty_space, empty_rounding, style->window.background);
 
         /* fill right empty space */
         empty_space.x = layout->bounds.x + layout->bounds.w;
@@ -20358,7 +20366,10 @@ nk_panel_end(struct nk_context *ctx)
         empty_space.h = layout->bounds.h;
         if (*layout->offset_y == 0 && !(layout->flags & NK_WINDOW_NO_SCROLLBAR))
             empty_space.w += scrollbar_size.x;
-        nk_fill_rect(out, empty_space, 0, style->window.background);
+        empty_rounding = panel_rounding;
+        empty_rounding = NK_MIN(empty_rounding, empty_space.w * 0.5f);
+        empty_rounding = NK_MIN(empty_rounding, empty_space.h * 0.5f);
+        nk_fill_rect(out, empty_space, empty_rounding, style->window.background);
 
         /* fill bottom empty space */
         if (layout->footer_height > 0) {
@@ -20366,7 +20377,10 @@ nk_panel_end(struct nk_context *ctx)
             empty_space.y = layout->bounds.y + layout->bounds.h;
             empty_space.w = window->bounds.w;
             empty_space.h = layout->footer_height;
-            nk_fill_rect(out, empty_space, 0, style->window.background);
+            empty_rounding = panel_rounding;
+            empty_rounding = NK_MIN(empty_rounding, empty_space.w * 0.5f);
+            empty_rounding = NK_MIN(empty_rounding, empty_space.h * 0.5f);
+            nk_fill_rect(out, empty_space, empty_rounding, style->window.background);
         }
     }
 
@@ -21436,7 +21450,8 @@ nk_nonblock_begin(struct nk_context *ctx,
     popup->layout = (struct nk_panel*)nk_create_panel(ctx);
     popup->flags = flags;
     popup->flags |= NK_WINDOW_BORDER;
-    popup->flags |= NK_WINDOW_DYNAMIC;
+    if (panel_type != NK_PANEL_MENU)
+        popup->flags |= NK_WINDOW_DYNAMIC;
     popup->seq = ctx->seq;
     win->popup.active = 1;
     NK_ASSERT(popup->layout);

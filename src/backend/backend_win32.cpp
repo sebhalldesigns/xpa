@@ -474,48 +474,111 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
 
                 
                 const struct nk_user_font *f = ctx.style.font;
+                const float menu_popup_rounding = 8.0f;
 
                 if (nk_begin(&ctx, "Main Menu",
                     nk_rect(0.0f, 0.0f, (float)data->width, 30.0f),
                     NK_WINDOW_NO_SCROLLBAR))
                 {
+
+                    
+                    
+                    const int num_menus = 4;
+                    const char *labels[num_menus] = {"File", "Edit", "View", "Help"};
+
+                    const int items_per_menu = 8;
+
+                    const char *menu_items[][items_per_menu] = {
+                        {"New...", "Open...", "Open Workspace...", "Save", "Save As...", "Settings", "Exit", ""},
+                        {"Cut", "Copy", "Paste", "Find", "", "", "", ""},
+                        {"New Window", "Open Layout", "Save Layout As...", "", "", "", "", ""},
+                        {"Documentation", "About", "", "", "", "", "", ""},
+                        
+                    };
+
+                    const char *menu_shortcuts[][items_per_menu] = {
+                        {"Ctrl+N", "Ctrl+O", "", "Ctrl+S", "Ctrl+Shift+S", "Ctrl+,", "Alt+F4", ""},
+                        {"Ctrl+X", "Ctrl+C", "Ctrl+V", "Ctrl+F", "", "", "", ""},
+                        {"", "", "", "", "", "", "", ""},
+                        {"", "", "", "", "", "", "", ""},
+                    };
+
                     nk_menubar_begin(&ctx);
 
-                    nk_layout_row_begin(&ctx, NK_STATIC, 22, 3);
+                    nk_layout_row_begin(&ctx, NK_STATIC, 22, num_menus);
 
-                    const char *labels[] = {"File", "View", "Tools"};
-                    for (int i = 0; i < 3; i++)
+                    for (int i = 0; i < num_menus; i++)
                     {
                         float text_width = f->width(f->userdata, f->height, labels[i], (int)strlen(labels[i]));
                         float menu_pad = ctx.style.menu_button.padding.x * 2;
                         nk_layout_row_push(&ctx, text_width + menu_pad + 8.0f);
 
-                        if (nk_menu_begin_label(&ctx, labels[i], NK_TEXT_CENTERED, nk_vec2(160, 200)))
+                        nk_bool pushed_rounding = nk_style_push_float(
+                            &ctx, &ctx.style.window.rounding, menu_popup_rounding);
+
+                        int menu_item_count = 0;
+                        for (int j = 0; j < items_per_menu; j++)
                         {
+                            if (menu_items[i][j][0] != '\0')
+                                menu_item_count++;
+                        }
+
+                        if (nk_menu_begin_label(&ctx, labels[i], NK_TEXT_CENTERED, nk_vec2(160, menu_item_count * 28 + 4)))
+                        {
+                            
+                            struct nk_command_buffer *canvas = nk_window_get_canvas(&ctx);
+
                             nk_layout_row_dynamic(&ctx, 24, 1);
-                            if (i == 0) /* File */
+
+                            for (int j = 0; j < menu_item_count; j++)
                             {
-                                if (nk_menu_item_label(&ctx, "Open DBC...", NK_TEXT_LEFT))
-                                    printf("[ui] Open DBC clicked\n");
-                                if (nk_menu_item_label(&ctx, "Quit", NK_TEXT_LEFT))
-                                    PostQuitMessage(0);
+                            
+                                if (nk_menu_item_label(&ctx, menu_items[i][j], NK_TEXT_LEFT))
+                                {
+                                    printf("[ui] %s -> %s clicked\n", labels[i], menu_items[i][j]);
+                                    if (strcmp(menu_items[i][j], "Exit") == 0)
+                                        PostQuitMessage(0);
+                                }
+
+                                /* Get the rect of the widget that was just drawn */
+                                struct nk_rect bounds = nk_layout_widget_bounds(&ctx);
+                                //bounds.y -= (24 + ctx.style.window.spacing.y);
+
+
+                                const char *shortcut = menu_shortcuts[i][j];
+                                if (shortcut[0] != '\0')
+                                {
+                                    float pad = ctx.style.contextual_button.padding.x;
+                                    float shortcut_w = f->width(f->userdata, f->height, shortcut, (int)strlen(shortcut));
+
+                                    struct nk_rect sc_rect;
+                                    sc_rect.x = bounds.x + bounds.w - shortcut_w - pad;
+                                    sc_rect.y = bounds.y + 4.0f;
+                                    sc_rect.w = shortcut_w;
+                                    sc_rect.h = bounds.h;
+
+                                    nk_draw_text(canvas, sc_rect,
+                                        shortcut, (int)strlen(shortcut), ctx.style.font,
+                                        nk_rgba(0, 0, 0, 0), nk_rgb(110, 110, 135));
+                                }
+
                             }
-                            else if (i == 1) /* View */
-                            {
-                                nk_menu_item_label(&ctx, "Show Metrics", NK_TEXT_LEFT);
-                            }
-                            else if (i == 2) /* Tools */
-                            {
-                                nk_menu_item_label(&ctx, "Reset Session", NK_TEXT_LEFT);
-                            }
+
                             nk_menu_end(&ctx);
                         }
+                        if (pushed_rounding)
+                            nk_style_pop_float(&ctx);
                     }
 
                     nk_layout_row_end(&ctx);
 
+
                     nk_menubar_end(&ctx);
+
+
                 }
+
+
                 nk_end(&ctx);
 
         
@@ -747,13 +810,14 @@ static void xpa_set_theme(struct nk_context *ctx)
     s->window.padding               = nk_vec2(4, 4);
     s->window.spacing               = nk_vec2(4, 4);
     s->window.group_padding         = nk_vec2(4, 4);
+    s->window.rounding = 0.0f;
 
     /* Menu popup background */
     s->window.contextual_border_color = border;
     s->window.contextual_border       = 1.0f;
     s->window.combo_border_color      = border;
     s->window.combo_border            = 1.0f;
-    s->window.menu_border             = 1.0f;
+    s->window.menu_border             = 0.0f;
 
     /* Button */
     s->button.normal          = nk_style_item_color(nk_rgb(52, 52, 64));
@@ -775,7 +839,7 @@ static void xpa_set_theme(struct nk_context *ctx)
     s->contextual_button.text_hover   = nk_rgb(255, 255, 255);
     s->contextual_button.text_active  = nk_rgb(255, 255, 255);
     s->contextual_button.padding      = nk_vec2(12, 4);
-    s->contextual_button.rounding     = 0.0f;
+    s->contextual_button.rounding     = 4.0f;
 
     /* Menu button (items inside dropdown menus) */
     s->menu_button.normal       = nk_style_item_color(panel);
