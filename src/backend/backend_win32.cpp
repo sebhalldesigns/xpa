@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <time.h>
 #include <math.h>
+#include <string.h>
 
 #include <string>
 #include <vector>
@@ -105,10 +106,22 @@ static bool running = true;
 static std::vector<xpa_window_internal_t*> windows;
 static int pixel_format;
 static PIXELFORMATDESCRIPTOR pfd = { 0 };
+static nk_bool ui_show_metrics = nk_true;
+static nk_bool ui_enable_filter = nk_true;
+static int ui_mode = 0;
+static int ui_rate_hz = 50;
+static float ui_threshold = 0.45f;
+static nk_size ui_load_pct = 42;
+static int ui_channel_index = 0;
+static char ui_filter_text[64] = "0x180";
+static float ui_chart_phase = 0.0f;
+static float ui_chart_values[24] = {0};
 
 /***************************************************************
 ** MARK: STATIC FUNCTION DEFS
 ***************************************************************/
+
+static void xpa_set_theme(struct nk_context *ctx);
 
 static xpa_window_internal_t* get_window_data(HWND hwnd);
 
@@ -361,6 +374,8 @@ bool xpa_backend_create_window(const char *title, uint32_t width, uint32_t heigh
 
     nk_gl3_font_stash_end(&ctx);
 
+    xpa_set_theme(&ctx);
+
     // Start input collection for the next frame.
     nk_input_begin(&ctx);
 
@@ -454,16 +469,146 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
                 PAINTSTRUCT ps;
                 BeginPaint(window, &ps);
 
-                 /* End input collection, build UI, render */
+                /* End input collection, build UI, render */
                 nk_input_end(&ctx);
 
-                if (nk_begin(&ctx, "Test", nk_rect(20, 20, 300, 200),
-                    NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_TITLE))
+                static const char *channel_items[] = {"CAN0", "CAN1", "LIN0", "SIM"};
+                bool request_close = false;
+
+                /* Push styles for the menu bar window specifically */
+                nk_style_push_vec2(&ctx, &ctx.style.window.padding, nk_vec2(0, 0));
+                nk_style_push_vec2(&ctx, &ctx.style.window.spacing, nk_vec2(0, 0));
+                nk_style_push_float(&ctx, &ctx.style.window.border, 0.0f);
+
+                if (nk_begin(&ctx, "Main Menu",
+                    nk_rect(0.0f, 0.0f, (float)data->width, 30.0f),
+                    NK_WINDOW_NO_SCROLLBAR))
                 {
-                    nk_layout_row_dynamic(&ctx, 25, 1);
-                    nk_label(&ctx, "Hello from Nuklear", NK_TEXT_LEFT);
-                    if (nk_button_label(&ctx, "Click me"))
-                        printf("clicked!\n");
+                    nk_menubar_begin(&ctx);
+                    nk_layout_row_begin(&ctx, NK_STATIC, 26, 4);
+                    
+                    nk_layout_row_push(&ctx, 60);
+                    if (nk_menu_begin_label(&ctx, "File", NK_TEXT_CENTERED, nk_vec2(160, 150)))
+                    {
+                         nk_layout_row_dynamic(&ctx, 24, 1);
+                        if (nk_menu_item_label(&ctx, "Open DBC...", NK_TEXT_LEFT))
+                            printf("[ui] Open DBC clicked\n");
+                        if (nk_menu_item_label(&ctx, "Export Log...", NK_TEXT_LEFT))
+                            printf("[ui] Export Log clicked\n");
+                        if (nk_menu_item_label(&ctx, "Quit", NK_TEXT_LEFT))
+                            request_close = true;
+                        nk_menu_end(&ctx);
+                    }
+
+                    nk_layout_row_push(&ctx, 60);
+                    if (nk_menu_begin_label(&ctx, "View", NK_TEXT_CENTERED, nk_vec2(180, 140)))
+                    {
+                        nk_layout_row_dynamic(&ctx, 24, 1);
+                        if (nk_menu_item_label(&ctx,
+                            ui_show_metrics ? "Hide Metrics" : "Show Metrics",
+                            NK_TEXT_LEFT))
+                            ui_show_metrics = !ui_show_metrics;
+                        if (nk_menu_item_label(&ctx,
+                            ui_enable_filter ? "Disable Filter" : "Enable Filter",
+                            NK_TEXT_LEFT))
+                            ui_enable_filter = !ui_enable_filter;
+                        nk_menu_end(&ctx);
+                    }
+
+                    nk_layout_row_push(&ctx, 60);
+                    if (nk_menu_begin_label(&ctx, "Tools", NK_TEXT_CENTERED, nk_vec2(180, 130)))
+                    {
+                        nk_layout_row_dynamic(&ctx, 24, 1);
+                        if (nk_menu_item_label(&ctx, "Reset Session", NK_TEXT_LEFT))
+                        {
+                            ui_mode = 0;
+                            ui_rate_hz = 50;
+                            ui_threshold = 0.45f;
+                            ui_load_pct = 42;
+                            ui_channel_index = 0;
+                            memset(ui_filter_text, 0, sizeof(ui_filter_text));
+                            memcpy(ui_filter_text, "0x180", sizeof("0x180"));
+                        }
+                        if (nk_menu_item_label(&ctx, "Clear Metrics", NK_TEXT_LEFT))
+                        {
+                            memset(ui_chart_values, 0, sizeof(ui_chart_values));
+                        }
+                        nk_menu_end(&ctx);
+                    }
+
+
+                     nk_layout_row_push(&ctx, 60);
+                    if (nk_menu_begin_label(&ctx, "Help", NK_TEXT_CENTERED, nk_vec2(180, 130)))
+                    {
+                        nk_layout_row_dynamic(&ctx, 24, 1);
+                        if (nk_menu_item_label(&ctx, "About", NK_TEXT_LEFT))
+                            printf("[ui] BusLab + Nuklear demo UI\n");
+                        nk_menu_end(&ctx);
+                    }
+
+
+                    nk_layout_row_end(&ctx);
+                    nk_menubar_end(&ctx);
+                }
+                nk_end(&ctx);
+
+                nk_style_pop_float(&ctx);
+                nk_style_pop_vec2(&ctx);
+                nk_style_pop_vec2(&ctx);
+
+            
+                if (request_close)
+                    PostMessageW(window, WM_CLOSE, 0, 0);
+
+                if (nk_begin(&ctx, "Control Frame", nk_rect(20.0f, 48.0f, 420.0f, 520.0f),
+                    NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE | NK_WINDOW_TITLE))
+                {
+                    nk_layout_row_dynamic(&ctx, 24, 1);
+                    nk_label(&ctx, "Bus Session", NK_TEXT_LEFT);
+
+                    nk_layout_row_dynamic(&ctx, 28, 2);
+                    if (nk_button_label(&ctx, "Start Capture"))
+                        printf("[ui] Capture started\n");
+                    if (nk_button_label(&ctx, "Stop"))
+                        printf("[ui] Capture stopped\n");
+
+                    nk_layout_row_dynamic(&ctx, 24, 1);
+                    nk_checkbox_label(&ctx, "Enable ID Filter", &ui_enable_filter);
+                    nk_checkbox_label(&ctx, "Show Metrics", &ui_show_metrics);
+
+                    nk_layout_row_dynamic(&ctx, 24, 2);
+                    if (nk_option_label(&ctx, "Live", ui_mode == 0)) ui_mode = 0;
+                    if (nk_option_label(&ctx, "Playback", ui_mode == 1)) ui_mode = 1;
+
+                    nk_layout_row_dynamic(&ctx, 28, 1);
+                    nk_property_int(&ctx, "Rate (Hz)", 1, &ui_rate_hz, 500, 1, 1.0f);
+                    nk_property_float(&ctx, "Threshold", 0.0f, &ui_threshold, 1.0f, 0.01f, 0.01f);
+
+                    nk_layout_row_dynamic(&ctx, 24, 2);
+                    nk_label(&ctx, "Channel", NK_TEXT_LEFT);
+                    ui_channel_index = nk_combo(&ctx, channel_items, 4, ui_channel_index, 24, nk_vec2(220, 220));
+
+                    nk_layout_row_dynamic(&ctx, 24, 1);
+                    nk_label(&ctx, "Filter (CAN ID / expression)", NK_TEXT_LEFT);
+                    nk_layout_row_dynamic(&ctx, 28, 1);
+                    nk_edit_string_zero_terminated(&ctx, NK_EDIT_FIELD, ui_filter_text,
+                        (int)sizeof(ui_filter_text), nk_filter_default);
+
+                    nk_layout_row_dynamic(&ctx, 28, 1);
+                    nk_progress(&ctx, &ui_load_pct, 100, nk_true);
+
+                    ui_chart_phase += 0.08f;
+                    if (ui_chart_phase >= 6.283185307f)
+                        ui_chart_phase -= 6.283185307f;
+                    memmove(&ui_chart_values[0], &ui_chart_values[1], sizeof(float) * 23);
+                    ui_chart_values[23] = 0.5f + 0.45f * sinf(ui_chart_phase);
+
+                    if (ui_show_metrics && nk_chart_begin(&ctx, NK_CHART_LINES, 24, 0.0f, 1.0f))
+                    {
+                        for (int i = 0; i < 24; ++i)
+                            nk_chart_push(&ctx, ui_chart_values[i]);
+                        nk_chart_end(&ctx);
+                    }
                 }
                 nk_end(&ctx);
 
@@ -663,4 +808,208 @@ static float get_window_dpi_scale(HWND hwnd)
         }
     }
     return 1.0f;
+}
+
+static void xpa_set_theme(struct nk_context *ctx)
+{
+    struct nk_color bg        = nk_rgb(30, 30, 36);
+    struct nk_color panel     = nk_rgb(38, 38, 46);
+    struct nk_color border    = nk_rgb(55, 55, 65);
+    struct nk_color header    = nk_rgb(42, 42, 52);
+    struct nk_color text      = nk_rgb(210, 210, 220);
+    struct nk_color text_dim  = nk_rgb(140, 140, 160);
+    struct nk_color accent    = nk_rgb(60, 120, 215);
+    struct nk_color hover     = nk_rgb(50, 50, 62);
+    struct nk_color active    = nk_rgb(60, 60, 74);
+    struct nk_color slider_bg = nk_rgb(48, 48, 58);
+
+    struct nk_style *s = &ctx->style;
+
+    /* Window */
+    s->window.background            = bg;
+    s->window.fixed_background      = nk_style_item_color(panel);
+    s->window.border_color          = border;
+    s->window.border                = 1.0f;
+    s->window.header.normal         = nk_style_item_color(header);
+    s->window.header.hover          = nk_style_item_color(header);
+    s->window.header.active         = nk_style_item_color(header);
+    s->window.header.label_normal   = text;
+    s->window.header.label_hover    = text;
+    s->window.header.label_active   = text;
+    s->window.header.padding        = nk_vec2(4, 2);
+    s->window.padding               = nk_vec2(6, 6);
+    s->window.spacing               = nk_vec2(4, 4);
+    s->window.group_padding         = nk_vec2(4, 4);
+
+    /* Menu bar button (the "File", "Edit" etc labels) */
+    #if 0
+    s->window.menu_button.normal    = nk_style_item_color(nk_rgba(0, 0, 0, 0));
+    s->window.menu_button.hover     = nk_style_item_color(hover);
+    s->window.menu_button.active    = nk_style_item_color(active);
+    s->window.menu_button.text_normal = text;
+    s->window.menu_button.text_hover  = text;
+    s->window.menu_button.text_active = text;
+    s->window.menu_button.padding   = nk_vec2(8, 4);
+    #endif
+    s->window.menu_border_color     = border;
+
+    /* Menu popup background */
+    s->window.contextual_border_color = border;
+    s->window.contextual_border       = 1.0f;
+    s->window.combo_border_color      = border;
+    s->window.combo_border            = 1.0f;
+    s->window.menu_border             = 1.0f;
+
+    /* Button */
+    s->button.normal          = nk_style_item_color(nk_rgb(52, 52, 64));
+    s->button.hover           = nk_style_item_color(hover);
+    s->button.active          = nk_style_item_color(accent);
+    s->button.border_color    = border;
+    s->button.border          = 1.0f;
+    s->button.rounding        = 3.0f;
+    s->button.text_normal     = text;
+    s->button.text_hover      = text;
+    s->button.text_active     = nk_rgb(255, 255, 255);
+    s->button.padding         = nk_vec2(8, 4);
+
+    /* Contextual button (menu items) */
+    s->contextual_button.normal       = nk_style_item_color(panel);
+    s->contextual_button.hover        = nk_style_item_color(accent);
+    s->contextual_button.active       = nk_style_item_color(accent);
+    s->contextual_button.text_normal  = text;
+    s->contextual_button.text_hover   = nk_rgb(255, 255, 255);
+    s->contextual_button.text_active  = nk_rgb(255, 255, 255);
+    s->contextual_button.padding      = nk_vec2(12, 4);
+    s->contextual_button.rounding     = 0.0f;
+
+    /* Menu button (items inside dropdown menus) */
+    s->menu_button.normal       = nk_style_item_color(panel);
+    s->menu_button.hover        = nk_style_item_color(accent);
+    s->menu_button.active       = nk_style_item_color(accent);
+    s->menu_button.text_normal  = text;
+    s->menu_button.text_hover   = nk_rgb(255, 255, 255);
+    s->menu_button.text_active  = nk_rgb(255, 255, 255);
+    s->menu_button.padding      = nk_vec2(12, 4);
+
+    /* Text */
+    s->text.color = text;
+
+    /* Checkbox */
+    s->checkbox.normal          = nk_style_item_color(slider_bg);
+    s->checkbox.hover           = nk_style_item_color(hover);
+    s->checkbox.active          = nk_style_item_color(active);
+    s->checkbox.cursor_normal   = nk_style_item_color(accent);
+    s->checkbox.cursor_hover    = nk_style_item_color(accent);
+    s->checkbox.text_normal     = text;
+    s->checkbox.text_hover      = text;
+    s->checkbox.text_active     = text;
+    s->checkbox.border_color    = border;
+    s->checkbox.border          = 1.0f;
+    s->checkbox.padding         = nk_vec2(3, 3);
+
+    /* Slider */
+    s->slider.normal            = nk_style_item_color(slider_bg);
+    s->slider.hover             = nk_style_item_color(slider_bg);
+    s->slider.active            = nk_style_item_color(slider_bg);
+    s->slider.bar_normal        = border;
+    s->slider.bar_hover         = border;
+    s->slider.bar_active        = border;
+    s->slider.bar_filled        = accent;
+    s->slider.cursor_normal     = nk_style_item_color(accent);
+    s->slider.cursor_hover      = nk_style_item_color(nk_rgb(80, 140, 235));
+    s->slider.cursor_active     = nk_style_item_color(nk_rgb(100, 160, 255));
+    s->slider.cursor_size       = nk_vec2(12, 20);
+    s->slider.bar_height        = 4;
+
+    /* Progress */
+    s->progress.normal          = nk_style_item_color(slider_bg);
+    s->progress.hover           = nk_style_item_color(slider_bg);
+    s->progress.active          = nk_style_item_color(slider_bg);
+    s->progress.cursor_normal   = nk_style_item_color(accent);
+    s->progress.cursor_hover    = nk_style_item_color(accent);
+    s->progress.cursor_active   = nk_style_item_color(accent);
+    s->progress.border_color    = border;
+    s->progress.border          = 1.0f;
+    s->progress.rounding        = 2.0f;
+    s->progress.cursor_rounding = 2.0f;
+
+    /* Property (number edit) */
+    s->property.normal          = nk_style_item_color(slider_bg);
+    s->property.hover           = nk_style_item_color(hover);
+    s->property.active          = nk_style_item_color(active);
+    s->property.border_color    = border;
+    s->property.border          = 1.0f;
+    s->property.rounding        = 3.0f;
+    s->property.label_normal    = text;
+    s->property.label_hover     = text;
+    s->property.label_active    = text;
+
+    /* Edit (text input) */
+    s->edit.normal              = nk_style_item_color(nk_rgb(34, 34, 42));
+    s->edit.hover               = nk_style_item_color(nk_rgb(38, 38, 48));
+    s->edit.active              = nk_style_item_color(nk_rgb(34, 34, 42));
+    s->edit.border_color        = border;
+    s->edit.border              = 1.0f;
+    s->edit.rounding            = 3.0f;
+    s->edit.cursor_normal       = text;
+    s->edit.cursor_hover        = text;
+    s->edit.cursor_text_normal  = bg;
+    s->edit.cursor_text_hover   = bg;
+    s->edit.text_normal         = text;
+    s->edit.text_hover          = text;
+    s->edit.text_active         = text;
+    s->edit.selected_normal     = accent;
+    s->edit.selected_hover      = accent;
+    s->edit.selected_text_normal = nk_rgb(255, 255, 255);
+    s->edit.selected_text_hover  = nk_rgb(255, 255, 255);
+    s->edit.padding             = nk_vec2(4, 4);
+
+    /* Combo */
+    s->combo.normal             = nk_style_item_color(slider_bg);
+    s->combo.hover              = nk_style_item_color(hover);
+    s->combo.active             = nk_style_item_color(active);
+    s->combo.border_color       = border;
+    s->combo.border             = 1.0f;
+    s->combo.rounding           = 3.0f;
+    s->combo.label_normal       = text;
+    s->combo.label_hover        = text;
+    s->combo.label_active       = text;
+    s->combo.symbol_normal      = text_dim;
+    s->combo.symbol_hover       = text;
+    s->combo.symbol_active      = text;
+    s->combo.content_padding    = nk_vec2(6, 4);
+    s->combo.button_padding     = nk_vec2(4, 4);
+
+    /* Tab / tree */
+    s->tab.background           = nk_style_item_color(panel);
+    s->tab.border_color         = border;
+    s->tab.border               = 1.0f;
+    s->tab.text                 = text;
+    s->tab.tab_maximize_button.normal = nk_style_item_color(nk_rgba(0, 0, 0, 0));
+    s->tab.tab_maximize_button.hover  = nk_style_item_color(hover);
+    s->tab.tab_maximize_button.active = nk_style_item_color(active);
+    s->tab.tab_minimize_button.normal = nk_style_item_color(nk_rgba(0, 0, 0, 0));
+    s->tab.tab_minimize_button.hover  = nk_style_item_color(hover);
+    s->tab.tab_minimize_button.active = nk_style_item_color(active);
+    s->tab.node_maximize_button.normal = nk_style_item_color(nk_rgba(0, 0, 0, 0));
+    s->tab.node_maximize_button.hover  = nk_style_item_color(hover);
+    s->tab.node_maximize_button.active = nk_style_item_color(active);
+    s->tab.node_minimize_button.normal = nk_style_item_color(nk_rgba(0, 0, 0, 0));
+    s->tab.node_minimize_button.hover  = nk_style_item_color(hover);
+    s->tab.node_minimize_button.active = nk_style_item_color(active);
+
+    /* Scrollbar */
+    s->scrollh.normal           = nk_style_item_color(bg);
+    s->scrollh.hover            = nk_style_item_color(bg);
+    s->scrollh.active           = nk_style_item_color(bg);
+    s->scrollh.cursor_normal    = nk_style_item_color(nk_rgb(60, 60, 72));
+    s->scrollh.cursor_hover     = nk_style_item_color(nk_rgb(80, 80, 96));
+    s->scrollh.cursor_active    = nk_style_item_color(nk_rgb(100, 100, 116));
+    s->scrollh.border_color     = nk_rgba(0, 0, 0, 0);
+    s->scrollh.border           = 0.0f;
+    s->scrollh.rounding         = 4.0f;
+    s->scrollh.rounding_cursor  = 4.0f;
+    s->scrollh.border_cursor    = 0.0f;
+
+    s->scrollv = s->scrollh;
 }
