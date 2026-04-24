@@ -29,11 +29,49 @@ extern "C" {
 ** MARK: CONSTANTS & MACROS
 ***************************************************************/
 
+#define XPA_COLOR_WHITE {1.0f, 1.0f, 1.0f, 1.0f}
+#define XPA_COLOR_BLACK {0.0f, 0.0f, 0.0f, 1.0f}
+#define XPA_COLOR_RED   {1.0f, 0.0f, 0.0f, 1.0f}
+#define XPA_COLOR_GREEN {0.0f, 1.0f, 0.0f, 1.0f}
+#define XPA_COLOR_BLUE  {0.0f, 0.0f, 1.0f, 1.0f}
+
 /***************************************************************
 ** MARK: TYPEDEFS
 ***************************************************************/
 
+typedef enum
+{
+    XPA_BUTTON_PRIMARY,
+    XPA_BUTTON_SECONDARY,
+    XPA_BUTTON_TERTIARY,
+    XPA_BUTTON_MAX = XPA_BUTTON_TERTIARY
+} xpa_button_t;
+
+typedef struct
+{
+    float x;
+    float y;
+} xpa_point_t;
+
+typedef struct
+{
+    float x;
+    float y;
+    float width;
+    float height;
+} xpa_frame_t;
+
+typedef struct
+{
+    float red;
+    float green;
+    float blue;
+    float alpha;
+} xpa_color_t;
+
 typedef uintptr_t xpa_window_t;
+
+
 
 /***************************************************************
 ** MARK: FUNCTION DEFS

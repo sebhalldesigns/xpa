@@ -17,6 +17,11 @@
 
 #include "backend.h"
 
+#include <draw/draw.h>
+#include <control/control.h>
+#include <workbench/workbench.h>
+
+
 #ifndef UNICODE
 #define UNICODE
 #endif
@@ -37,19 +42,9 @@
 #include <vector>
 #include <algorithm>
 
-
-#define NK_INCLUDE_FIXED_TYPES
-#define NK_INCLUDE_STANDARD_IO
-#define NK_INCLUDE_STANDARD_VARARGS
-#define NK_INCLUDE_DEFAULT_ALLOCATOR
-#define NK_INCLUDE_VERTEX_BUFFER_OUTPUT
-#define NK_INCLUDE_FONT_BAKING
-#define NK_INCLUDE_DEFAULT_FONT
-#define NK_IMPLEMENTATION
-#include <nuklear/nuklear.h>
-
 #define NK_GL3_IMPLEMENTATION
 #include "nk_gl3.h"
+
 
 /***************************************************************
 ** MARK: CONSTANTS & MACROS
@@ -103,6 +98,7 @@ typedef struct {
     HDC          gldc;
     int width;
     int height;
+    workbench_t workbench;
 } xpa_window_internal_t;
 
 /***************************************************************
@@ -153,6 +149,8 @@ static float get_window_dpi_scale(HWND hwnd);
 static LRESULT titlebar_hit_test(HWND hwnd, int x, int y, int titlebar_height);
 
 static void apply_dwm_frame(HWND hwnd);
+
+static void render_dock(bool mouse_down, float x, float y, float w, float h);
 
 static inline double xpa_now_ms(void)
 {
@@ -321,7 +319,6 @@ bool xpa_backend_create_window(const char *title, uint32_t width, uint32_t heigh
 
     printf("[xpa] CreateWindowExW completed at +%.2f ms\n", xpa_now_ms() - start_ms);
 
-    // Attach GPU renderer to the window
     xpa_window_internal_t* data = (xpa_window_internal_t*)calloc(1, sizeof(xpa_window_internal_t));
     data->hwnd = win32_window;
     data->gldc = GetDC(win32_window);
@@ -329,6 +326,8 @@ bool xpa_backend_create_window(const char *title, uint32_t width, uint32_t heigh
     GetClientRect(win32_window, &client_rect);
     data->width = client_rect.right - client_rect.left;
     data->height = client_rect.bottom - client_rect.top;
+    workbench_init(&data->workbench);
+    workbench_set_frame(&data->workbench, {0, 0, (float)data->width, (float)data->height});
 
     printf("[xpa] renderer ready at +%.2f ms\n", xpa_now_ms() - start_ms);
 
@@ -471,6 +470,8 @@ int xpa_backend_run(void)
 ** MARK: STATIC FUNCTIONS
 ***************************************************************/
 
+static bool is_mouse_down = false;
+static float mouse_x = 0.0f, mouse_y = 0.0f;
 
 static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, LPARAM lparam)
 {
@@ -555,6 +556,8 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
                 data->width = width;
                 data->height = height;
 
+                workbench_set_frame(&data->workbench, {0, 0, (float)data->width, (float)data->height});
+
                 InvalidateRect(window, NULL, FALSE);
             }
 
@@ -566,15 +569,13 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
             if (data)
             {
 
-                
-
                 PAINTSTRUCT ps;
                 BeginPaint(window, &ps);
 
                 /* End input collection, build UI, render */
                 nk_input_end(&ctx);
 
-                
+                #if 0
                 const struct nk_user_font *f = ctx.style.font;
                 const struct nk_user_font *brand_font = ui_font_semibold ? &ui_font_semibold->handle : f;
                 const float menu_popup_rounding = 8.0f;
@@ -769,19 +770,71 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
                         nk_style_pop_vec2(&ctx);
                 }
 
+                
+
 
                 nk_end(&ctx);
 
+                if (nk_begin(&ctx, "Content",
+                    nk_rect(0.0f, top_inset + 32.0f, (float)data->width, (float)data->height - top_inset - 32.0f),
+                    NK_WINDOW_NO_SCROLLBAR))
 
+                    render_dock(is_mouse_down, mouse_x, mouse_y, (float)data->width, (float)data->height);
 
- 
-            
+                    /* Container with horizontal scroll */
+                    nk_layout_row_dynamic(&ctx, 120, 1);
+                    if (nk_group_begin(&ctx, "hscroll", NK_WINDOW_BORDER))
+                    {
+                        /* Single row of fixed-width items */
+                        int item_count = 20;
+                        float item_size = 80.0f;
+                        float item_gap = 8.0f;
+
+                        nk_layout_row_begin(&ctx, NK_STATIC, 80, item_count);
+
+                        for (int i = 0; i < item_count; i++)
+                        {
+                            nk_layout_row_push(&ctx, item_size);
+
+                            /* Each square is a button or custom widget */
+                            char label[16];
+                            snprintf(label, sizeof(label), "%d", i);
+
+                            if (nk_button_label(&ctx, label))
+                                printf("clicked %d\n", i);
+                        }
+
+                        nk_layout_row_end(&ctx);
+                        nk_group_end(&ctx);
+                    }
+                nk_end(&ctx);
+
+                
+                #endif
+                
+                nk_begin(&ctx, "Workbench", nk_rect(0.0f, 0.0f, (float)data->width, (float)data->height), NK_WINDOW_NO_SCROLLBAR);
+                nk_layout_space_begin(&ctx, NK_STATIC, (float)data->height, 1);
+
+                draw_set_context(&ctx);
+                control_set_context(&ctx);
+                workbench_render(&data->workbench);
+
+                xpa_frame_t mouse_rect = { mouse_x - 5.0f, mouse_y - 5.0f, 10.0f, 10.0f };
+                xpa_color_t color = XPA_COLOR_GREEN;
+                draw_rect(&mouse_rect, &color);
+
+                control_button("Test", &mouse_rect);
+                
+                nk_layout_space_end(&ctx);
+                nk_end(&ctx);
+
                 glViewport(0, 0, data->width, data->height);
                 glDisable(GL_SCISSOR_TEST);
                 glClearColor(38.0f/255.0f, 38.0f/255.0f, 46.0f/255.0f, 0.0f);
                 glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
+                
                 nk_gl3_render(&ctx, data->width, data->height);
+
 
                 
                 SwapBuffers(data->gldc);
@@ -820,16 +873,20 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
 
         case WM_MOUSEMOVE:
             nk_input_motion(&ctx, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
+            mouse_x = (float)GET_X_LPARAM(lparam);
+            mouse_y = (float)GET_Y_LPARAM(lparam);
             return 0;
 
         case WM_LBUTTONDOWN:
             SetCapture(window);
             nk_input_button(&ctx, NK_BUTTON_LEFT, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), 1);
+            is_mouse_down = true;
             return 0;
 
         case WM_LBUTTONUP:
             nk_input_button(&ctx, NK_BUTTON_LEFT, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), 0);
             ReleaseCapture();
+            is_mouse_down = false;
             return 0;
 
         case WM_RBUTTONDOWN:
@@ -991,8 +1048,8 @@ static void xpa_set_theme(struct nk_context *ctx)
     struct nk_style *s = &ctx->style;
 
     /* Window */
-    s->window.background            = bg;
-    s->window.fixed_background      = nk_style_item_color(panel);
+    s->window.background            = nk_rgba(0, 0, 0, 0);
+    s->window.fixed_background      = nk_style_item_color(nk_rgba(0, 0, 0, 0));
     s->window.border_color          = border;
     s->window.border                = 0.0f;
     s->window.header.normal         = nk_style_item_color(header);
@@ -1002,7 +1059,7 @@ static void xpa_set_theme(struct nk_context *ctx)
     s->window.header.label_hover    = text;
     s->window.header.label_active   = text;
     s->window.header.padding        = nk_vec2(4, 2);
-    s->window.padding               = nk_vec2(4, 4);
+    s->window.padding               = nk_vec2(0, 0);
     s->window.spacing               = nk_vec2(4, 4);
     s->window.group_padding         = nk_vec2(4, 4);
     s->window.rounding = 0.0f;
@@ -1228,4 +1285,97 @@ static void apply_dwm_frame(HWND hwnd)
 {
     MARGINS margins = { 0, 0, 32, 0 };
     DwmExtendFrameIntoClientArea(hwnd, &margins);
+}
+
+static void render_dock(bool mouse_down, float x, float y, float w, float h)
+{
+    static float splitter_thickness = 2.0f;
+    struct nk_color splitter_normal = nk_rgba(60, 60, 60, 0);
+    struct nk_color splitter_highlight = nk_rgba(60, 60, 60, 200);
+
+    struct nk_command_buffer *canvas = nk_window_get_canvas(&ctx);
+
+    static float left_width = 250.0f;
+    
+
+    struct nk_rect left = nk_rect(0.0f, 32.0f + 25.0f, left_width, h);
+    nk_fill_rect(canvas, left, 0.0f, nk_rgb(0, 255, 0));
+
+    static float right_width = 250.0f;
+
+    struct nk_rect right = nk_rect(w - right_width, 32.0f + 25.0f, right_width, h);
+    nk_fill_rect(canvas, right, 0.0f, nk_rgb(0, 0, 255));
+
+    struct nk_rect left_splitter = nk_rect(left_width, 32.0f, splitter_thickness, h);
+    struct nk_color left_splitter_color = splitter_normal;
+    
+    if (x >= left_splitter.x && x <= left_splitter.x + left_splitter.w && y >= left_splitter.y && y <= left_splitter.y + left_splitter.h)
+    {
+        left_splitter_color = splitter_highlight;
+        
+    }
+
+    nk_fill_rect(canvas, left_splitter, 0.0f, left_splitter_color);
+
+    struct nk_rect right_splitter = nk_rect(w - right_width - splitter_thickness, 32.0f, splitter_thickness, h);
+    struct nk_color right_splitter_color = splitter_normal;
+
+    if (x >= right_splitter.x && x <= right_splitter.x + right_splitter.w && y >= right_splitter.y && y <= right_splitter.y + right_splitter.h)
+    {
+        right_splitter_color = splitter_highlight;
+    }
+
+    nk_fill_rect(canvas, right_splitter, 0.0f, right_splitter_color);
+    
+
+
+    static bool is_dragging = false;
+    static float drag_x, drag_y = 0.0f;
+    static float start_x = 0.0f;
+    static float start_y = 32.0f;
+    
+    
+
+    struct nk_color highlight = nk_rgba(60, 120, 215, 80);
+
+    static struct nk_rect preview = nk_rect(start_x, start_y, 100.0f, 25.0f);
+    
+    if (x >= preview.x && x <= preview.x + preview.w && y >= preview.y && y <= preview.y + preview.h)
+    {
+        highlight = nk_rgba(60, 120, 215, 255);
+
+        if (mouse_down && !is_dragging)
+        {
+            /* drag start */
+            is_dragging = true;
+            drag_x = x;
+            drag_y = y;
+        }
+    }
+
+    if (mouse_down && is_dragging)
+    {
+        /* drag continue */
+        float dx = x - drag_x;
+        float dy = y - drag_y;
+
+        preview.x += dx;
+        preview.y += dy;
+
+        drag_x = x;
+        drag_y = y;
+    }
+
+    if (!mouse_down && is_dragging)
+    {
+        /* drag end */
+        is_dragging = false;
+        drag_x = drag_y = 0.0f;
+        preview = nk_rect(start_x, start_y, 100.0f, 25.0f);
+    }
+
+    nk_fill_rect(canvas, preview, 4.0f, highlight);
+
+
+
 }

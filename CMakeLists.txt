@@ -10,7 +10,13 @@ add_subdirectory(extern)
 
 add_library(xpa STATIC
     src/lib.c
+    src/backend/nuklear_impl.c
     src/backend/backend_win32.cpp
+    
+    src/draw/draw.c
+    src/control/control.c
+    src/workbench/workbench.cpp
+    src/menubar/menubar.cpp
 )
 
 target_include_directories(xpa PUBLIC
