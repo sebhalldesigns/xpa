@@ -1320,18 +1320,6 @@ static LRESULT titlebar_hit_test(HWND hwnd, int x, int y, int titlebar_height)
             return HTCAPTION;
         }
         
-
-        #if 0
-        // Let your menu/search/widgets be client.
-        if (pt.x < 200 && pt.x > 55)
-            return HTCLIENT;
-
-        // Never treat the system-button area as draggable caption.
-        if (pt.x >= rc.right - WINDOW_BUTTONS_WIDTH)
-            return HTCLIENT;
-
-        return HTCAPTION;
-        #endif
     }
         
 

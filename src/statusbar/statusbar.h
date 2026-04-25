@@ -2,17 +2,17 @@
 **
 ** XPA Header File
 **
-** File         :  workbench.h
-** Module       :  workbench
+** File         :  statusbar.h
+** Module       :  statusbar
 ** Author       :  SH
-** Created      :  2026-04-20 (YYYY-MM-DD)
+** Created      :  2026-04-25 (YYYY-MM-DD)
 ** License      :  MIT
-** Description  :  XPA Workbench Implementation
+** Description  :  XPA Status Bar Implementation
 **
 ***************************************************************/
 
-#ifndef WORKBENCH_H
-#define WORKBENCH_H
+#ifndef STATUSBAR_H
+#define STATUSBAR_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,10 +24,6 @@ extern "C" {
 
 #include <xpa/xpa.h>
 
-#include <menubar/menubar.h>
-#include <statusbar/statusbar.h>
-
-
 /***************************************************************
 ** MARK: CONSTANTS & MACROS
 ***************************************************************/
@@ -38,30 +34,22 @@ extern "C" {
 
 typedef struct
 {   
-    menubar_t menubar;
-    statusbar_t statusbar;
-
     xpa_rect_t frame;
+    xpa_rect_t label_frame;
 
-    xpa_rect_t menubar_frame;
-    xpa_rect_t dock_frame;
-    xpa_rect_t statusbar_frame;
-} workbench_t;
+} statusbar_t;
 
 /***************************************************************
 ** MARK: FUNCTION DEFS
 ***************************************************************/
 
-void workbench_init(workbench_t *workbench);
+void statusbar_init(statusbar_t *statusbar);
 
-void workbench_set_frame(workbench_t *workbench, xpa_rect_t frame);
-
-void workbench_render(workbench_t *workbench);
-
-bool workbench_hit_test(workbench_t *workbench, xpa_point_t point);
+void statusbar_set_frame(statusbar_t *statusbar, xpa_rect_t frame);
+void statusbar_render(statusbar_t *statusbar);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* WORKBENCH_H */
+#endif /* STATUSBAR_H */

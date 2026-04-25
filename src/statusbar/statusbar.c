@@ -2,12 +2,12 @@
 **
 ** XPA Source File
 **
-** File         :  workbench.c
-** Module       :  workbench
+** File         :  statusbar.c
+** Module       :  statusbar
 ** Author       :  SH
-** Created      :  2026-04-20 (YYYY-MM-DD)
+** Created      :  2026-04-25 (YYYY-MM-DD)
 ** License      :  MIT
-** Description  :  XPA Workbench Implementation
+** Description  :  XPA Status Bar Implementation
 **
 ***************************************************************/
 
@@ -15,8 +15,12 @@
 ** MARK: INCLUDES
 ***************************************************************/
 
-#include "workbench.h"
+#include "statusbar.h"
+
 #include <draw/draw.h>
+#include <control/control.h>
+
+#include <stdlib.h>
 
 /***************************************************************
 ** MARK: CONSTANTS & MACROS
@@ -30,6 +34,7 @@
 ** MARK: STATIC VARIABLES
 ***************************************************************/
 
+
 /***************************************************************
 ** MARK: STATIC FUNCTION DEFS
 ***************************************************************/
@@ -38,37 +43,26 @@
 ** MARK: PUBLIC FUNCTIONS
 ***************************************************************/
 
-void workbench_init(workbench_t *workbench)
+
+void statusbar_init(statusbar_t *statusbar)
 {
-    menubar_init(&workbench->menubar);
-    statusbar_init(&workbench->statusbar);
 }
 
-void workbench_set_frame(workbench_t *workbench, xpa_rect_t frame)
+void statusbar_set_frame(statusbar_t *statusbar, xpa_rect_t frame)
 {
-    workbench->frame = frame;
+    statusbar->frame = frame;
 
-    workbench->menubar_frame = (xpa_rect_t){frame.x, frame.y, frame.width, 30.0f};
-    menubar_set_frame(&workbench->menubar, workbench->menubar_frame);
-
-    workbench->statusbar_frame = (xpa_rect_t){frame.x, frame.y + frame.height - 25.0f, frame.width, 25.0f};
-    statusbar_set_frame(&workbench->statusbar, workbench->statusbar_frame);
-
-    workbench->dock_frame = (xpa_rect_t){frame.x, frame.y + 30.0f, frame.width, frame.height - 30.0f - 25.0f};
-
+    statusbar->label_frame = (xpa_rect_t){
+        frame.x + 10.0f,
+        frame.y,
+        100.0f,
+        frame.height
+    };
 }
 
-void workbench_render(workbench_t *workbench)
+void statusbar_render(statusbar_t *statusbar)
 {
-    menubar_render(&workbench->menubar);
-    statusbar_render(&workbench->statusbar);
-
-    draw_rect(workbench->dock_frame, (xpa_color_t){0.1f, 1.0f, 0.1f, 1.0f});
-}
-
-bool workbench_hit_test(workbench_t *workbench, xpa_point_t point)
-{
-    return menubar_hit_test(&workbench->menubar, point);
+    control_label("Status: Ready", statusbar->label_frame, 0);
 }
 
 /***************************************************************

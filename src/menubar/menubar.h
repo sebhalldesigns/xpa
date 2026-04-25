@@ -32,7 +32,6 @@ extern "C" {
 ** MARK: TYPEDEFS
 ***************************************************************/
 
-/* struct to represent single instance of a dock */
 typedef struct
 {   
     size_t entries;
