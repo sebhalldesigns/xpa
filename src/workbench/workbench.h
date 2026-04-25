@@ -37,8 +37,12 @@ extern "C" {
 
 typedef struct
 {   
-    xpa_frame_t frame;
     menubar_t menubar;
+
+    xpa_rect_t frame;
+
+    xpa_rect_t menubar_frame;
+    xpa_rect_t dock_frame;
 } workbench_t;
 
 /***************************************************************
@@ -47,9 +51,11 @@ typedef struct
 
 void workbench_init(workbench_t *workbench);
 
-void workbench_set_frame(workbench_t *workbench, xpa_frame_t frame);
+void workbench_set_frame(workbench_t *workbench, xpa_rect_t frame);
 
 void workbench_render(workbench_t *workbench);
+
+bool workbench_hit_test(workbench_t *workbench, xpa_point_t point);
 
 #ifdef __cplusplus
 }

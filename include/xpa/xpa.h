@@ -55,11 +55,17 @@ typedef struct
 
 typedef struct
 {
+    float width;
+    float height;
+} xpa_size_t;
+
+typedef struct
+{
     float x;
     float y;
     float width;
     float height;
-} xpa_frame_t;
+} xpa_rect_t;
 
 typedef struct
 {

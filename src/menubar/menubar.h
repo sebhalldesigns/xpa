@@ -36,7 +36,14 @@ extern "C" {
 typedef struct
 {   
     size_t entries;
-    xpa_frame_t frame;
+    xpa_rect_t frame;
+
+    xpa_rect_t logo_frame;
+    xpa_rect_t menu_frame; /* overall menu frame, for hit testing */
+    xpa_rect_t buttons_frame; 
+
+    xpa_rect_t search_frame;
+
 } menubar_t;
 
 /***************************************************************
@@ -45,8 +52,10 @@ typedef struct
 
 void menubar_init(menubar_t *menubar);
 
-void menubar_set_frame(menubar_t *menubar, xpa_frame_t frame);
+void menubar_set_frame(menubar_t *menubar, xpa_rect_t frame);
 void menubar_render(menubar_t *menubar);
+
+bool menubar_hit_test(menubar_t *menubar, xpa_point_t point);
 
 #ifdef __cplusplus
 }

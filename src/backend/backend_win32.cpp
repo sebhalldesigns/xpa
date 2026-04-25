@@ -41,6 +41,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <climits>
 
 #define NK_GL3_IMPLEMENTATION
 #include "nk_gl3.h"
@@ -129,6 +130,15 @@ static char ui_menu_search_text[128] = "";
 static float ui_chart_phase = 0.0f;
 static float ui_chart_values[24] = {0};
 static struct nk_font *ui_font_semibold = NULL;
+static struct nk_font *ui_font_icon_regular = NULL;
+static struct nk_font *ui_font_icon_solid = NULL;
+
+extern "C" {
+extern const unsigned char assets_fonts_Font_Awesome_7_Free_Regular_400_otf[];
+extern const unsigned assets_fonts_Font_Awesome_7_Free_Regular_400_otf_size;
+extern const unsigned char assets_fonts_Font_Awesome_7_Free_Solid_900_otf[];
+extern const unsigned assets_fonts_Font_Awesome_7_Free_Solid_900_otf_size;
+}
 
 /***************************************************************
 ** MARK: STATIC FUNCTION DEFS
@@ -414,8 +424,36 @@ bool xpa_backend_create_window(const char *title, uint32_t width, uint32_t heigh
     if (!ui_font_semibold)
         ui_font_semibold = font;
 
+    static const nk_rune font_awesome_ranges[] = {
+        0x20, 0x7f,
+        0xe000, 0xefff,
+        0xf000, 0xf8ff,
+        0
+    };
+
+    struct nk_font_config icon_cfg = nk_font_config(0);
+    icon_cfg.oversample_h = 1;
+    icon_cfg.oversample_v = 1;
+    icon_cfg.pixel_snap = nk_true;
+    icon_cfg.range = font_awesome_ranges;
+
+    const float icon_font_size = 13.0f;
+    ui_font_icon_regular = nk_font_atlas_add_from_memory(atlas,
+        (void*)assets_fonts_Font_Awesome_7_Free_Regular_400_otf,
+        (nk_size)assets_fonts_Font_Awesome_7_Free_Regular_400_otf_size,
+        icon_font_size, &icon_cfg);
+    ui_font_icon_solid = nk_font_atlas_add_from_memory(atlas,
+        (void*)assets_fonts_Font_Awesome_7_Free_Solid_900_otf,
+        (nk_size)assets_fonts_Font_Awesome_7_Free_Solid_900_otf_size,
+        icon_font_size, &icon_cfg);
+
     if (font)
         atlas->default_font = font;
+
+    control_set_normal_font(font);
+    control_set_bold_font(ui_font_semibold);
+    control_set_icon_fonts(ui_font_icon_regular, ui_font_icon_solid);
+
 
     nk_gl3_font_stash_end(&ctx);
 
@@ -551,12 +589,23 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
             uint32_t width = LOWORD(lparam);
             uint32_t height = HIWORD(lparam);
 
+            static xpa_rect_t frame = {0, 0, 0, 0};
+
             if (data && wparam != SIZE_MINIMIZED)
             {
                 data->width = width;
                 data->height = height;
+                frame.width = (float)width;
+                frame.height = (float)height;
+                frame.y = 0.0f;
 
-                workbench_set_frame(&data->workbench, {0, 0, (float)data->width, (float)data->height});
+                if (IsZoomed(window))
+                {
+                    frame.height -= 6.0f; // tune as needed to avoid caption button overlap
+                    frame.y = 6.0f;
+                }
+                
+                workbench_set_frame(&data->workbench, frame);
 
                 InvalidateRect(window, NULL, FALSE);
             }
@@ -813,17 +862,11 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
                 #endif
                 
                 nk_begin(&ctx, "Workbench", nk_rect(0.0f, 0.0f, (float)data->width, (float)data->height), NK_WINDOW_NO_SCROLLBAR);
-                nk_layout_space_begin(&ctx, NK_STATIC, (float)data->height, 1);
+                nk_layout_space_begin(&ctx, NK_STATIC, (float)data->height, INT_MAX);
 
                 draw_set_context(&ctx);
                 control_set_context(&ctx);
                 workbench_render(&data->workbench);
-
-                xpa_frame_t mouse_rect = { mouse_x - 5.0f, mouse_y - 5.0f, 10.0f, 10.0f };
-                xpa_color_t color = XPA_COLOR_GREEN;
-                draw_rect(&mouse_rect, &color);
-
-                control_button("Test", &mouse_rect);
                 
                 nk_layout_space_end(&ctx);
                 nk_end(&ctx);
@@ -1266,6 +1309,19 @@ static LRESULT titlebar_hit_test(HWND hwnd, int x, int y, int titlebar_height)
     /* Titlebar area — draggable, enables snap/aero shake */
     if (pt.y < titlebar_height)
     {
+
+        if (workbench_hit_test(&(get_window_data(hwnd)->workbench), {(float)pt.x, (float)pt.y}))
+        {
+            /* MENU BAR HIT TESTING */
+            return HTCLIENT;
+        }
+        else 
+        {
+            return HTCAPTION;
+        }
+        
+
+        #if 0
         // Let your menu/search/widgets be client.
         if (pt.x < 200 && pt.x > 55)
             return HTCLIENT;
@@ -1275,6 +1331,7 @@ static LRESULT titlebar_hit_test(HWND hwnd, int x, int y, int titlebar_height)
             return HTCLIENT;
 
         return HTCAPTION;
+        #endif
     }
         
 

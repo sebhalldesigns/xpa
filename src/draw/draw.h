@@ -47,7 +47,7 @@ extern "C" {
 
 void draw_set_context(struct nk_context *nk_context);
 
-void draw_rect(xpa_frame_t *frame, xpa_color_t *color);
+void draw_rect(xpa_rect_t frame, xpa_color_t color);
 
 #ifdef __cplusplus
 }

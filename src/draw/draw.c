@@ -46,9 +46,9 @@ void draw_set_context(struct nk_context *nk_context)
     canvas = nk_window_get_canvas(nk_ctx);
 }
 
-void draw_rect(xpa_frame_t *frame, xpa_color_t *color)
+void draw_rect(xpa_rect_t frame, xpa_color_t color)
 {
-    nk_fill_rect(canvas, (struct nk_rect){frame->x, frame->y, frame->width, frame->height}, 0.0f, nk_rgba_f(color->red, color->green, color->blue, color->alpha));
+    nk_fill_rect(canvas, *(struct nk_rect*)&frame, 0.0f, nk_rgba_f(color.red, color.green, color.blue, color.alpha));
 }
 
 /***************************************************************
