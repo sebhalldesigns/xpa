@@ -18,6 +18,8 @@
 #include "workbench.h"
 #include <draw/draw.h>
 
+#include <string.h>
+
 /***************************************************************
 ** MARK: CONSTANTS & MACROS
 ***************************************************************/
@@ -34,14 +36,17 @@
 ** MARK: STATIC FUNCTION DEFS
 ***************************************************************/
 
+static void command_callback(const char *command, void *data);
+
 /***************************************************************
 ** MARK: PUBLIC FUNCTIONS
 ***************************************************************/
 
 void workbench_init(workbench_t *workbench)
 {
-    menubar_init(&workbench->menubar);
+    menubar_init(&workbench->menubar, command_callback, workbench);
     statusbar_init(&workbench->statusbar);
+    dock_init(&workbench->dock);
 }
 
 void workbench_set_frame(workbench_t *workbench, xpa_rect_t frame)
@@ -55,6 +60,7 @@ void workbench_set_frame(workbench_t *workbench, xpa_rect_t frame)
     statusbar_set_frame(&workbench->statusbar, workbench->statusbar_frame);
 
     workbench->dock_frame = (xpa_rect_t){frame.x, frame.y + 30.0f, frame.width, frame.height - 30.0f - 25.0f};
+    dock_set_frame(&workbench->dock, workbench->dock_frame);
 
 }
 
@@ -62,8 +68,9 @@ void workbench_render(workbench_t *workbench)
 {
     menubar_render(&workbench->menubar);
     statusbar_render(&workbench->statusbar);
+    dock_render(&workbench->dock);
 
-    draw_rect(workbench->dock_frame, (xpa_color_t){0.1f, 1.0f, 0.1f, 1.0f});
+    //draw_rect(workbench->dock_frame, (xpa_color_t){0.1f, 1.0f, 0.1f, 1.0f});
 }
 
 bool workbench_hit_test(workbench_t *workbench, xpa_point_t point)
@@ -71,6 +78,38 @@ bool workbench_hit_test(workbench_t *workbench, xpa_point_t point)
     return menubar_hit_test(&workbench->menubar, point);
 }
 
+void workbench_input_button(workbench_t *workbench, xpa_button_t button, xpa_point_t position, bool state)
+{
+    dock_input_button(&workbench->dock, button, position, state);
+}
+
+void workbench_input_motion(workbench_t *workbench, xpa_point_t position)
+{
+    dock_input_motion(&workbench->dock, position);
+}
+
 /***************************************************************
 ** MARK: STATIC FUNCTIONS
 ***************************************************************/
+
+static void command_callback(const char *command, void *command_callback_data)
+{
+    printf("Menu command: %s\n", command);
+
+    workbench_t *workbench = (workbench_t*)command_callback_data;
+
+    if (strcmp(command, "dock.toggle_left") == 0)
+    {
+        dock_toggle_left(&workbench->dock);
+    }
+    else if (strcmp(command, "dock.toggle_right") == 0)
+    {
+        dock_toggle_right(&workbench->dock);
+    }
+    else if (strcmp(command, "dock.toggle_down") == 0)
+    {
+        dock_toggle_bottom(&workbench->dock);
+    }
+    
+   
+};

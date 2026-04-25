@@ -60,7 +60,11 @@ typedef enum
     CONTROL_ICON_FOLDER = 0xf07b,
     CONTROL_ICON_PLUS = 0xf067,
     CONTROL_ICON_X = 0xf00d,
-    CONTROL_ICON_HELP = 0xf128
+    CONTROL_ICON_HELP = 0xf128,
+    CONTROL_ICON_LEFT = 0xf104,
+    CONTROL_ICON_RIGHT = 0xf105,
+    CONTROL_ICON_UP = 0xf106,
+    CONTROL_ICON_DOWN = 0xf107
 } control_icon_t;
 
 /***************************************************************

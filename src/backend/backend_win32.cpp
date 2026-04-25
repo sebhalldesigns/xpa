@@ -386,7 +386,7 @@ bool xpa_backend_create_window(const char *title, uint32_t width, uint32_t heigh
     }
 
     if (wglSwapIntervalEXT) {
-        wglSwapIntervalEXT(1);   // enable vsync
+        wglSwapIntervalEXT(0);   // disable vsync
     }
 
     if (!gladLoadGL()) 
@@ -494,11 +494,6 @@ int xpa_backend_run(void)
  
         }
 
-        for (xpa_window_internal_t* data : windows)
-        {
-            InvalidateRect(data->hwnd, NULL, FALSE);
-        }
-       
     }
 
     return 0;
@@ -918,35 +913,47 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
             nk_input_motion(&ctx, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
             mouse_x = (float)GET_X_LPARAM(lparam);
             mouse_y = (float)GET_Y_LPARAM(lparam);
+            workbench_input_motion(&data->workbench, {mouse_x, mouse_y});
+            InvalidateRect(window, NULL, FALSE);
             return 0;
 
         case WM_LBUTTONDOWN:
             SetCapture(window);
             nk_input_button(&ctx, NK_BUTTON_LEFT, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), 1);
             is_mouse_down = true;
+            workbench_input_button(&data->workbench, XPA_BUTTON_PRIMARY, {mouse_x, mouse_y}, true);
+            InvalidateRect(window, NULL, FALSE);
             return 0;
 
         case WM_LBUTTONUP:
             nk_input_button(&ctx, NK_BUTTON_LEFT, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), 0);
             ReleaseCapture();
             is_mouse_down = false;
+            workbench_input_button(&data->workbench, XPA_BUTTON_PRIMARY, {mouse_x, mouse_y}, false);
+            InvalidateRect(window, NULL, FALSE);
             return 0;
 
         case WM_RBUTTONDOWN:
             nk_input_button(&ctx, NK_BUTTON_RIGHT, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), 1);
+            workbench_input_button(&data->workbench, XPA_BUTTON_SECONDARY, {mouse_x, mouse_y}, true);
+            InvalidateRect(window, NULL, FALSE);
             return 0;
 
         case WM_RBUTTONUP:
             nk_input_button(&ctx, NK_BUTTON_RIGHT, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), 0);
+            workbench_input_button(&data->workbench, XPA_BUTTON_SECONDARY, {mouse_x, mouse_y}, false);
+            InvalidateRect(window, NULL, FALSE);
             return 0;
 
         case WM_MOUSEWHEEL:
             nk_input_scroll(&ctx, nk_vec2(0, (float)GET_WHEEL_DELTA_WPARAM(wparam) / WHEEL_DELTA));
+            InvalidateRect(window, NULL, FALSE);
             return 0;
 
         case WM_CHAR:
             if (wparam >= 32)
                 nk_input_unicode(&ctx, (nk_rune)wparam);
+            InvalidateRect(window, NULL, FALSE);    
             return 0;
 
         case WM_KEYDOWN:
@@ -969,6 +976,8 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
             else if (wparam == 'A' && ctrl) nk_input_key(&ctx, NK_KEY_TEXT_SELECT_ALL, down);
             else if (wparam == 'Z' && ctrl) nk_input_key(&ctx, NK_KEY_TEXT_UNDO, down);
             else if (wparam == 'Y' && ctrl) nk_input_key(&ctx, NK_KEY_TEXT_REDO, down);
+
+            InvalidateRect(window, NULL, FALSE);
             return 0;
         }
 

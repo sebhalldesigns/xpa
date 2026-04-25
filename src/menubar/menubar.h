@@ -32,6 +32,8 @@ extern "C" {
 ** MARK: TYPEDEFS
 ***************************************************************/
 
+typedef void (*menu_command_callback_t)(const char *command, void *data);
+
 typedef struct
 {   
     size_t entries;
@@ -43,13 +45,17 @@ typedef struct
 
     xpa_rect_t search_frame;
 
+    menu_command_callback_t command_callback;
+    void *callback_data;
 } menubar_t;
+
+
 
 /***************************************************************
 ** MARK: FUNCTION DEFS
 ***************************************************************/
 
-void menubar_init(menubar_t *menubar);
+void menubar_init(menubar_t *menubar, menu_command_callback_t callback, void *callback_data);
 
 void menubar_set_frame(menubar_t *menubar, xpa_rect_t frame);
 void menubar_render(menubar_t *menubar);

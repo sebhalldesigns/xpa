@@ -62,9 +62,10 @@ static struct { const char **items; const char **shortcuts; size_t count; } menu
 ** MARK: PUBLIC FUNCTIONS
 ***************************************************************/
 
-void menubar_init(menubar_t *menubar)
+void menubar_init(menubar_t *menubar, menu_command_callback_t callback, void *callback_data)
 {
-    
+    menubar->command_callback = callback;
+    menubar->callback_data = callback_data;
 }
 
 void menubar_set_frame(menubar_t *menubar, xpa_rect_t frame)
@@ -96,7 +97,7 @@ void menubar_set_frame(menubar_t *menubar, xpa_rect_t frame)
         menubar->menu_frame.width += item_size.width;
     }
 
-    float buttons_width = 50.0f;
+    float buttons_width = 125.0f;
 
     menubar->buttons_frame = (xpa_rect_t){
         frame.width - buttons_width,
@@ -132,7 +133,7 @@ void menubar_set_frame(menubar_t *menubar, xpa_rect_t frame)
 
 void menubar_render(menubar_t *menubar)
 {
-    //draw_rect(menubar->search_frame, (xpa_color_t){1.0f, 0.15f, 0.15f, 1.0f});
+    //draw_rect(menubar->buttons_frame, (xpa_color_t){1.0f, 0.15f, 0.15f, 1.0f});
 
     control_label("BusLab", menubar->logo_frame, CONTROL_TEXT_BOLD);
 
@@ -168,14 +169,37 @@ void menubar_render(menubar_t *menubar)
         button_size
     };
 
-    if (control_icon_button(CONTROL_ICON_HELP, button_frame))
+    if (control_icon_button(CONTROL_ICON_LEFT, button_frame))
+    {
+        menubar->command_callback("dock.toggle_left", menubar->callback_data);
+    }
+
+    button_frame.x += button_size + 5.0f;
+
+    if (control_icon_button(CONTROL_ICON_DOWN, button_frame))
+    {
+        menubar->command_callback("dock.toggle_down", menubar->callback_data);
+    }
+
+    button_frame.x += button_size + 5.0f;
+
+    if (control_icon_button(CONTROL_ICON_RIGHT, button_frame))
+    {
+        /* dispatch settings */
+        menubar->command_callback("dock.toggle_right", menubar->callback_data);
+    }
+
+    button_frame.x += button_size + 5.0f;
+
+
+    if (control_icon_button(CONTROL_ICON_GEAR, button_frame))
     {
         /* dispatch close */
     }
 
     button_frame.x += button_size + 5.0f;
 
-    if (control_icon_button(CONTROL_ICON_GEAR, button_frame))
+    if (control_icon_button(CONTROL_ICON_HELP, button_frame))
     {
         /* dispatch settings */
     }

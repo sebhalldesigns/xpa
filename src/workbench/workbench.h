@@ -26,6 +26,7 @@ extern "C" {
 
 #include <menubar/menubar.h>
 #include <statusbar/statusbar.h>
+#include <dock/dock.h>
 
 
 /***************************************************************
@@ -40,6 +41,7 @@ typedef struct
 {   
     menubar_t menubar;
     statusbar_t statusbar;
+    dock_t dock;
 
     xpa_rect_t frame;
 
@@ -59,6 +61,9 @@ void workbench_set_frame(workbench_t *workbench, xpa_rect_t frame);
 void workbench_render(workbench_t *workbench);
 
 bool workbench_hit_test(workbench_t *workbench, xpa_point_t point);
+
+void workbench_input_button(workbench_t *workbench, xpa_button_t button, xpa_point_t position, bool state);
+void workbench_input_motion(workbench_t *workbench, xpa_point_t position);
 
 #ifdef __cplusplus
 }
