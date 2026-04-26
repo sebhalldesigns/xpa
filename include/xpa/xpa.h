@@ -48,6 +48,13 @@ typedef enum
     XPA_BUTTON_MAX = XPA_BUTTON_TERTIARY
 } xpa_button_t;
 
+typedef enum
+{
+    XPA_CURSOR_ARROW,
+    XPA_CURSOR_RESIZE_EW,
+    XPA_CURSOR_RESIZE_NS
+} xpa_cursor_t;
+
 typedef struct
 {
     float x;
@@ -91,6 +98,8 @@ bool xpa_init(void);
 bool xpa_create_window(const char *title, uint32_t width, uint32_t height, xpa_window_t *window);
 
 int xpa_run(void);
+
+void xpa_set_cursor(xpa_cursor_t cursor);
 
 #ifdef __cplusplus
 }

@@ -132,6 +132,7 @@ static float ui_chart_values[24] = {0};
 static struct nk_font *ui_font_semibold = NULL;
 static struct nk_font *ui_font_icon_regular = NULL;
 static struct nk_font *ui_font_icon_solid = NULL;
+static xpa_cursor_t current_cursor = XPA_CURSOR_ARROW;
 
 extern "C" {
 extern const unsigned char assets_fonts_Font_Awesome_7_Free_Regular_400_otf[];
@@ -161,6 +162,7 @@ static LRESULT titlebar_hit_test(HWND hwnd, int x, int y, int titlebar_height);
 static void apply_dwm_frame(HWND hwnd);
 
 static void render_dock(bool mouse_down, float x, float y, float w, float h);
+static HCURSOR xpa_cursor_handle(xpa_cursor_t cursor);
 
 static inline double xpa_now_ms(void)
 {
@@ -497,6 +499,12 @@ int xpa_backend_run(void)
     }
 
     return 0;
+}
+
+void xpa_backend_set_cursor(xpa_cursor_t cursor)
+{
+    current_cursor = cursor;
+    SetCursor(xpa_cursor_handle(current_cursor));
 }
 
 /***************************************************************
@@ -917,6 +925,15 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT msg, WPARAM wparam, L
             InvalidateRect(window, NULL, FALSE);
             return 0;
 
+        case WM_SETCURSOR:
+        {
+            if (LOWORD(lparam) == HTCLIENT)
+            {
+                SetCursor(xpa_cursor_handle(current_cursor));
+                return TRUE;
+            }
+        } break;
+
         case WM_LBUTTONDOWN:
             SetCapture(window);
             nk_input_button(&ctx, NK_BUTTON_LEFT, GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), 1);
@@ -1064,6 +1081,29 @@ static void set_process_dpi_awareness(void)
         (SetProcessDPIAwareProc)GetProcAddress(user32, "SetProcessDPIAware");
     if (set_dpi_aware)
         set_dpi_aware();
+}
+
+static HCURSOR xpa_cursor_handle(xpa_cursor_t cursor)
+{
+    LPCWSTR cursor_id = IDC_ARROW;
+
+    switch (cursor)
+    {
+        case XPA_CURSOR_RESIZE_EW:
+            cursor_id = IDC_SIZEWE;
+            break;
+
+        case XPA_CURSOR_RESIZE_NS:
+            cursor_id = IDC_SIZENS;
+            break;
+
+        case XPA_CURSOR_ARROW:
+        default:
+            cursor_id = IDC_ARROW;
+            break;
+    }
+
+    return LoadCursorW(NULL, cursor_id);
 }
 
 static float get_window_dpi_scale(HWND hwnd)

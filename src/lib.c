@@ -71,6 +71,11 @@ int xpa_run(void)
     return xpa_backend_run();
 }
 
+void xpa_set_cursor(xpa_cursor_t cursor)
+{
+    xpa_backend_set_cursor(cursor);
+}
+
 /***************************************************************
 ** MARK: STATIC FUNCTIONS
 ***************************************************************/
