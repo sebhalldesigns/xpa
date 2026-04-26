@@ -37,6 +37,50 @@ extern "C" {
 ***************************************************************/
 
 
+typedef struct tab_t
+{
+    xpa_rect_t frame;
+
+    const char *title;
+
+    struct tab_t *next;
+} tab_t;
+
+typedef struct tab_group_t
+{
+    xpa_rect_t frame;
+
+    bool is_tool; 
+
+    tab_t *tabs;
+    tab_t *active_tab;
+} tab_group_t;
+
+
+typedef struct dock_node_t
+{
+    xpa_rect_t frame;
+
+    struct dock_node_t *parent;
+
+    bool is_leaf;
+    
+    union {
+        struct
+        {
+            bool vertical_split;
+            float split_ratio; /* 0.0 to 1.0 */
+            struct dock_node_t *first;
+            struct dock_node_t *second;
+        } split;
+
+        struct
+        {
+            tab_group_t *group;
+        } leaf;
+    };
+} dock_node_t;
+
 
 /* struct to represent single instance of a dock */
 typedef struct
@@ -59,6 +103,8 @@ typedef struct
     float previous_right_width;
     float previous_bottom_height;
 
+    dock_node_t *root_document;
+
     xpa_point_t mouse_position;
     bool primary_down;
 
@@ -70,6 +116,8 @@ typedef struct
     xpa_point_t splitter_drag_start;
     float size_drag_start;
 } dock_t;
+
+
 
 /***************************************************************
 ** MARK: FUNCTION DEFS

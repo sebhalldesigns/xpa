@@ -18,7 +18,7 @@ add_library(xpa STATIC
     src/workbench/workbench.c
     src/menubar/menubar.c
     src/statusbar/statusbar.c
-    src/dock/dock.cpp
+    src/dock/dock.c
 )
 
 target_include_directories(xpa PUBLIC

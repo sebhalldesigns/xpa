@@ -19,6 +19,7 @@
 
 #include <draw/draw.h>
 
+
 /***************************************************************
 ** MARK: CONSTANTS & MACROS
 ***************************************************************/
@@ -59,7 +60,7 @@ void dock_set_frame(dock_t *dock, xpa_rect_t frame)
 {
     dock->frame = frame;
 
-    dock->left_frame = {
+    dock->left_frame = (xpa_rect_t){
         frame.x,
         frame.y,
         dock->left_width,
@@ -68,14 +69,14 @@ void dock_set_frame(dock_t *dock, xpa_rect_t frame)
 
     float left_splitter_thickness = dock->left_frame.width > 0.0f ? SPLITTER_THICKNESS : 0.0f;
 
-    dock->left_splitter_frame = {
+    dock->left_splitter_frame = (xpa_rect_t){
         frame.x + dock->left_width,
         frame.y,
         left_splitter_thickness,
         frame.height
     };
 
-    dock->right_frame = {
+    dock->right_frame = (xpa_rect_t){
         frame.x + frame.width - dock->right_width,
         frame.y,
         dock->right_width,
@@ -84,7 +85,7 @@ void dock_set_frame(dock_t *dock, xpa_rect_t frame)
 
     float right_splitter_thickness = dock->right_frame.width > 0.0f ? SPLITTER_THICKNESS : 0.0f;
 
-    dock->right_splitter_frame = {
+    dock->right_splitter_frame = (xpa_rect_t){
         frame.x + frame.width - dock->right_width - right_splitter_thickness,
         frame.y,
         right_splitter_thickness,
@@ -92,7 +93,7 @@ void dock_set_frame(dock_t *dock, xpa_rect_t frame)
     };
 
 
-    dock->bottom_frame = {
+    dock->bottom_frame = (xpa_rect_t){
         frame.x + dock->left_width + left_splitter_thickness,
         frame.y + frame.height - dock->bottom_height,
         frame.width - dock->left_width - dock->right_width - left_splitter_thickness - right_splitter_thickness,
@@ -101,14 +102,14 @@ void dock_set_frame(dock_t *dock, xpa_rect_t frame)
 
     float bottom_splitter_thickness = dock->bottom_frame.height > 0.0f ? SPLITTER_THICKNESS : 0.0f;
 
-    dock->bottom_splitter_frame = {
+    dock->bottom_splitter_frame = (xpa_rect_t){
         dock->bottom_frame.x,
         frame.y + frame.height - dock->bottom_height - bottom_splitter_thickness,
         dock->bottom_frame.width,
         bottom_splitter_thickness
     };
 
-    dock->content_frame = {
+    dock->content_frame = (xpa_rect_t){
         frame.x + dock->left_width + left_splitter_thickness,
         frame.y,
         frame.width - dock->left_width - dock->right_width - left_splitter_thickness - right_splitter_thickness,
@@ -118,36 +119,36 @@ void dock_set_frame(dock_t *dock, xpa_rect_t frame)
 
 void dock_render(dock_t *dock)
 {
-    draw_rect(dock->left_frame, {0.8f, 0.8f, 0.8f, 1.0f});
-    draw_rect(dock->right_frame, {0.8f, 0.8f, 0.8f, 1.0f});
-    draw_rect(dock->bottom_frame, {0.8f, 0.8f, 0.8f, 1.0f});
-    draw_rect(dock->content_frame, {0.9f, 0.9f, 0.9f, 1.0f});
+    draw_rect(dock->left_frame, (xpa_color_t){0.8f, 0.8f, 0.8f, 1.0f});
+    draw_rect(dock->right_frame, (xpa_color_t){0.8f, 0.8f, 0.8f, 1.0f});
+    draw_rect(dock->bottom_frame, (xpa_color_t){0.8f, 0.8f, 0.8f, 1.0f});
+    draw_rect(dock->content_frame, (xpa_color_t){0.9f, 0.9f, 0.9f, 1.0f});
 
     if (dock->hover_left_splitter)
     {
-        draw_rect(dock->left_splitter_frame, {0.6f, 0.6f, 0.6f, 1.0f});
+        draw_rect(dock->left_splitter_frame, (xpa_color_t){0.6f, 0.6f, 0.6f, 1.0f});
     }
     else
     {
-        draw_rect(dock->left_splitter_frame, {0.3f, 0.3f, 0.3f, 1.0f});
+        draw_rect(dock->left_splitter_frame, (xpa_color_t){0.3f, 0.3f, 0.3f, 1.0f});
     }
     
     if (dock->hover_right_splitter)
     {
-        draw_rect(dock->right_splitter_frame, {0.6f, 0.6f, 0.6f, 1.0f});
+        draw_rect(dock->right_splitter_frame, (xpa_color_t){0.6f, 0.6f, 0.6f, 1.0f});
     }
     else
     {
-        draw_rect(dock->right_splitter_frame, {0.3f, 0.3f, 0.3f, 1.0f});
+        draw_rect(dock->right_splitter_frame, (xpa_color_t){0.3f, 0.3f, 0.3f, 1.0f});
     }
 
     if (dock->hover_bottom_splitter)
     {
-        draw_rect(dock->bottom_splitter_frame, {0.6f, 0.6f, 0.6f, 1.0f});
+        draw_rect(dock->bottom_splitter_frame, (xpa_color_t){0.6f, 0.6f, 0.6f, 1.0f});
     }
     else
     {
-        draw_rect(dock->bottom_splitter_frame, {0.3f, 0.3f, 0.3f, 1.0f});
+        draw_rect(dock->bottom_splitter_frame, (xpa_color_t){0.3f, 0.3f, 0.3f, 1.0f});
     }
 }
 
